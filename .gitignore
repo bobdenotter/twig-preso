@@ -1,13 +1,21 @@
-# Bootstrap
-app/bootstrap*
+app/cache/*
+thumbs/
+composer.phar
+.DS_Store
+._.DS_Store
+.idea
+__*
+.__*
+web
+Vagrantfile
+.vagrant*
+scrutinizer.phar
+php-cs-fixer.phar
+*.sublime-*
+.*.swp
+/tags
+.swp
+*.lock
+.gitignore
 
-# Symfony directories
-vendor/*
-*/logs/*
-*/cache/*
-web/uploads/*
-web/bundles/*
-
-# Configuration files
-app/config/parameters.ini
-app/config/parameters.yml
+composer.lock
