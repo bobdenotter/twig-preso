@@ -38,6 +38,8 @@ slides:
         sortorder:
             type: integer
             default: 10
+        sub:
+            type: checkbox
         background:
             type: image
         notes:

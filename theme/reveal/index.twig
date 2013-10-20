@@ -16,7 +16,8 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
 		<link rel="stylesheet" href="{{ paths.theme }}css/reveal.min.css">
-		<link rel="stylesheet" href="{{ paths.theme }}css/theme/default.css" id="theme">
+		<link rel="stylesheet" href="{{ paths.theme }}css/theme/theme.css" id="theme">
+		<link href='http://fonts.googleapis.com/css?family=Open+Sans:400italic,700italic,400,700' rel='stylesheet' type='text/css'>
 
 		<!-- For syntax highlighting -->
 		<link rel="stylesheet" href="{{ paths.theme }}lib/css/sunburst.css">
@@ -39,15 +40,22 @@
 			<div class="slides">
 
 		{% setcontent slides = "slides" orderby "sortorder" %}
+		
 		{% for slide in slides %}
+
+			{# Slides met een "sub" moeten een extra <section> tag krijgen. #}
+			{% if slide.next('sortorder').sub and not slide.sub %}
+			<section>
+			{% endif %}
 
 			<section 
 			{% if slide.background %}data-background="{{ image(slide.background) }}"{% endif %}>
+
 				<h{{ slide.headingsize }}>{{ slide.title }}</h{{ slide.headingsize }}>
 
 				{{ slide.contents }}
 
-				{% if slide.code %}
+				{% if slide.values.code %}
 					<pre><code data-trim contenteditable>{% spaceless %}
 					{{ slide.values.code }}
 					
@@ -61,6 +69,11 @@
 				{% endif %}
 
 			</section>
+
+			{# En eventueel de extra <section> tag weer afsluiten. #}
+			{% if slide.sub and not slide.next('sortorder').sub %}
+			</section>
+			{% endif %}
 
 		{% endfor %}
 

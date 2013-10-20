@@ -735,7 +735,7 @@ class Content implements \ArrayAccess
         $field = safeString($field);
 
         $params = array(
-            $field => '>'.$this->values[$field],
+            $field => '<'.$this->values[$field],
             'limit' => 1,
             'order' => $field . ' ASC',
             'returnsingle' => true
@@ -755,9 +755,9 @@ class Content implements \ArrayAccess
         $field = safeString($field);
 
         $params = array(
-            $field => '<'.$this->values[$field],
+            $field => '>'.$this->values[$field],
             'limit' => 1,
-            'order' => $field . ' DESC',
+            'order' => $field . ' ASC',
             'returnsingle' => true
         );
 
