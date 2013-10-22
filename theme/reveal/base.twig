@@ -2,53 +2,53 @@
 <!doctype html>
 <html lang="en">
 
-	<head>
-		<meta charset="utf-8">
+<head>
+    <meta charset="utf-8">
 
-		<title>{% block title %}reveal.js - The HTML Presentation Framework {% endblock %}</title>
+    <title>{% block title %}reveal.js - The HTML Presentation Framework {% endblock %}</title>
 
-		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<link rel="stylesheet" href="{{ paths.theme }}css/reveal.min.css">
-		<link rel="stylesheet" href="{{ paths.theme }}css/theme/theme.css" id="theme">
+    <link rel="stylesheet" href="{{ paths.theme }}css/reveal.min.css">
+    <link rel="stylesheet" href="{{ paths.theme }}css/theme/theme.css" id="theme">
 
-		<!-- For syntax highlighting -->
-		<link rel="stylesheet" href="{{ paths.theme }}lib/css/sunburst.css">
+    <!-- For syntax highlighting -->
+    <link rel="stylesheet" href="{{ paths.theme }}lib/css/sunburst.css">
 
-	</head>
+</head>
 
-	<body>
+<body>
 
-	{% block content %}
+    {% block content %}
 
-	{% endblock %}		
+    {% endblock %}      
 
-	<script src="{{ paths.theme }}lib/js/head.min.js"></script>
-	<script src="{{ paths.theme }}js/reveal.min.js"></script>
-	<script>
+    <script src="{{ paths.theme }}lib/js/head.min.js"></script>
+    <script src="{{ paths.theme }}js/reveal.min.js"></script>
+    <script>
 
-		// Full list of configuration options available here:
-		// https://github.com/hakimel/reveal.js#configuration
-		Reveal.initialize({
-			controls: true,
-			progress: true,
-			history: true,
-			center: true,
+        // Full list of configuration options available here:
+        // https://github.com/hakimel/reveal.js#configuration
+        Reveal.initialize({
+            controls: true,
+            progress: true,
+            history: true,
+            center: true,
 
-			theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
-			transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+            theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+            transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
 
-			// Optional libraries used to extend on reveal.js
-			dependencies: [
-				{ src: '{{ paths.theme }}lib/js/classList.js', condition: function() { return !document.body.classList; } },
-				{ src: '{{ paths.theme }}plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
-				{ src: '{{ paths.theme }}plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
-				{ src: '{{ paths.theme }}plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
-				{ src: '{{ paths.theme }}plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
-				{ src: '{{ paths.theme }}plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
-			]
-		});
+            // Optional libraries used to extend on reveal.js
+            dependencies: [
+            { src: '{{ paths.theme }}lib/js/classList.js', condition: function() { return !document.body.classList; } },
+            { src: '{{ paths.theme }}plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+            { src: '{{ paths.theme }}plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+            { src: '{{ paths.theme }}plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+            { src: '{{ paths.theme }}plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+            { src: '{{ paths.theme }}plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+            ]
+        });
 
-	</script>
-	</body>
+</script>
+</body>
 </html>

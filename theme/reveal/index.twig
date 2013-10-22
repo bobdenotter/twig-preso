@@ -5,46 +5,46 @@
 {% block content %}
 
 <div class="reveal">
-	<div class="slides">	
+    <div class="slides">    
 
-		{% setcontent slides = "slides" orderby "sortorder" %}
-		
-		{% for slide in slides %}
+        {% setcontent slides = "slides" orderby "sortorder" %}
+        
+        {% for slide in slides %}
 
-			{# Slides met een "sub" moeten een extra <section> tag krijgen. #}
-			{% if slide.next('sortorder').sub and not slide.sub %}
-			<section>
-			{% endif %}
+        {# Slides met een "sub" moeten een extra <section> tag krijgen. #}
+        {% if not slide.sub and slide.next('sortorder').sub %}
+        <section>
+        {% endif %}
 
-				<section 
-				{% if slide.background %}data-background="{{ image(slide.background) }}"{% endif %}>
+            <section data-transition="{{ slide.transition }}"
+                {% if slide.background %}data-background="{{ image(slide.background) }}"{% endif %}>
 
-					<h{{ slide.headingsize }}>{{ slide.title }}</h{{ slide.headingsize }}>
+                <h{{ slide.headingsize }}>{{ slide.title }}</h{{ slide.headingsize }}>
 
-					{{ slide.contents }}
+                {{ slide.contents }}
 
-					{% if slide.values.code %}
-					<pre><code data-trim contenteditable>{% spaceless %}
-						{{ slide.values.code }}
-					{% endspaceless %}</code></pre>
-					{% endif %}
+                {% if slide.values.code %}
+                    <pre><code data-trim contenteditable>{% spaceless %}
+                        {{ slide.values.code }}
+                    {% endspaceless %}</code></pre>
+                {% endif %}
 
-					{% if slide.notes %}
-					<aside class="notes">
-						{{ slide.notes }}
-					</aside>
-					{% endif %}
+                {% if slide.notes %}
+                    <aside class="notes">
+                        {{ slide.notes }}
+                    </aside>
+                {% endif %}
 
-				</section>
+            </section>
 
-			{# En eventueel de extra <section> tag weer afsluiten. #}
-			{% if slide.sub and not slide.next('sortorder').sub %}
-			</section>
-			{% endif %}
+        {# En eventueel de extra <section> tag weer afsluiten. #}
+        {% if slide.sub and not slide.next('sortorder').sub %}
+        </section>
+        {% endif %}
 
-		{% endfor %}
+        {% endfor %}
 
-	</div>
+    </div>
 </div>
 
 {% endblock %}

@@ -40,6 +40,11 @@ slides:
             default: 10
         sub:
             type: checkbox
+        transition:
+            type: select
+            values: [ cube, page, concave, zoom, linear, fade, none, "" ]
+            multiple: false
+            default: ""
         background:
             type: image
         notes:
