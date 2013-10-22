@@ -24,7 +24,7 @@
                 {{ slide.contents }}
 
                 {% if slide.values.code %}
-                    <pre><code data-trim contenteditable>{% spaceless %}
+                    <pre {% if slide.contents|length > 10 %}class="fragment"{% endif %}><code data-trim contenteditable>{% spaceless %}
                         {{ slide.values.code }}
                     {% endspaceless %}</code></pre>
                 {% endif %}
