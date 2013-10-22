@@ -35,9 +35,6 @@ slides:
         code:
             type: textarea
             height: 150px
-        sortorder:
-            type: integer
-            default: 10
         sub:
             type: checkbox
         transition:
@@ -50,6 +47,7 @@ slides:
         notes:
             type: html
             height: 300px
+    taxonomy: [ chapters ]            
     record_template: entry.twig
     listing_template: listing.twig
     listing_records: 100

@@ -7,12 +7,12 @@
 <div class="reveal">
     <div class="slides">    
 
-        {% setcontent slides = "slides" orderby "sortorder" %}
+        {% setcontent slides = "slides" %}
         
         {% for slide in slides %}
 
         {# Slides met een "sub" moeten een extra <section> tag krijgen. #}
-        {% if not slide.sub and slide.next('sortorder').sub %}
+        {% if not slide.sub and slide.next('id').sub %}
         <section>
         {% endif %}
 
@@ -38,7 +38,7 @@
             </section>
 
         {# En eventueel de extra <section> tag weer afsluiten. #}
-        {% if slide.sub and not slide.next('sortorder').sub %}
+        {% if slide.sub and not slide.next('id').sub %}
         </section>
         {% endif %}
 

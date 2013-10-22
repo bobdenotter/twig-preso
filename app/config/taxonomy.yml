@@ -11,7 +11,7 @@ chapters:
     slug: chapters
     singular_slug: chapter
     behaves_like: grouping
-    options: { main: "The main chapter", meta: "Meta Chapter", other: "The other stuff" }
+    options: { intro: "Intro", twig: "Twig primer", twig2: "Twig deel 2", outro: "Outro" }
     has_sortorder: true
 
 categories:
