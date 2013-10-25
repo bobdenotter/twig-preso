@@ -11,36 +11,7 @@
         
         {% for slide in slides %}
 
-        {# Slides met een "sub" moeten een extra <section> tag krijgen. #}
-        {% if not slide.sub and slide.next('id').sub %}
-        <section>
-        {% endif %}
-
-            <section data-transition="{{ slide.transition }}"
-                {% if slide.background %}data-background="{{ image(slide.background) }}"{% endif %}>
-
-                <h{{ slide.headingsize }}>{{ slide.title }}</h{{ slide.headingsize }}>
-
-                {{ slide.contents }}
-
-                {% if slide.values.code %}
-                    <pre {% if slide.contents|length > 50 %}class="fragment"{% endif %}><code data-trim contenteditable>{% spaceless %}
-                        {{ slide.values.code }}
-                    {% endspaceless %}</code></pre>
-                {% endif %}
-
-                {% if slide.notes %}
-                    <aside class="notes">
-                        {{ slide.notes }}
-                    </aside>
-                {% endif %}
-
-            </section>
-
-        {# En eventueel de extra <section> tag weer afsluiten. #}
-        {% if slide.sub and not slide.next('id').sub %}
-        </section>
-        {% endif %}
+            {% include 'slide.twig' %}
 
         {% endfor %}
 
