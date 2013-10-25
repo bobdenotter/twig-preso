@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>HTML5 boilerplate – all you really need…</title>
+    <link rel="stylesheet" href="{{ paths.theme }}css/normalize.css">
+    <!--[if IE]>
+        <script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+</head>
+
+<body id="home" style="padding: 12px;">
+
+        {% setcontent slides = "slides" %}
+        
+        {% for slide in slides %}
+
+            <h1>{{ slide.title }}</h1>
+
+            {{ slide.notes }}
+
+            <hr>
+
+        {% endfor %}
+
+
+</body>
+</html>
