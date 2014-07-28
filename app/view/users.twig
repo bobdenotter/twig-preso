@@ -9,18 +9,24 @@
             <tr>
                 <th>#</th>
                 <th>{{ __('Username') }}</th>
-                <th>{{ __('Level') }}</th>
                 <th>{{ __('Last seen') }}</th>
-                <th>{{ __('Contenttypes') }}</th>
+                <th>{{ __('Roles') }}</th>
                 <th>{{ __('Actions') }}</th>
             </tr>
             {% for user in users %}
 
-                <tr class="{% if user.enabled==0 %}dim{% endif %}">
-                    <td class='id'>№ {{user.id}}</td>
+                <tr>
+                    <td class='id'>
+                        {% if user.enabled==0 %}<s>{% endif %}
+                        № {{user.id}}
+                        {% if user.enabled==0 %}</s>{% endif %}</td>
 
-                    <td><strong>{{ user.displayname }}</strong> ({{ user.username}}) </td>
-                    <td>{{ userlevels[user.userlevel] }} </td>
+                    <td>
+                        {% if user.enabled==0 %}<s>{% endif %}
+                        <strong>{{ user.displayname }}</strong> ({{ user.username}})
+                        {% if user.enabled==0 %}</s>{% endif %}
+                    </td>
+
                     <td>
                         {% if user.lastseen|date('Y') > "1901" %}
                             <time class="moment" datetime="{{ user.lastseen|date("c") }}" title="{{ user.lastseen }}">{{ user.lastseen }}</time>
@@ -29,10 +35,10 @@
                         {% endif %}
                     </td>
                     <td class='contenttypes'>
-                        {% if user.contenttypes|length == app.config.get('contenttypes')|length %}
-                            <em>all</em>
+                        {% if 'root' in user.roles %}
+                            <strong><em>root</em></strong>
                         {% else %}
-                            {{ user.contenttypes|join(", ") }}
+                            {{ user.roles|join(", ") }}
                         {% endif %}
                     </td>
                     <td class='actions'>
@@ -47,11 +53,33 @@
                             </button>
                             <ul class="dropdown-menu pull-right">
                                 {% if user.enabled %}
-                                    <li><a href="{{ path('useraction', { 'action': 'disable', 'id': user.id }) }}">{{ __('Disable %username%',{'%username%':user.displayname}) }}</a></li>
+                                    <li>
+                                        <form action="{{ path('useraction', { 'action': 'disable', 'id': user.id }) }}" method="POST">
+                                            {% include('_sub_csrf_token.twig') %}
+                                            <button type="submit" class="btn btn-link">
+                                            {{ __('Disable %username%',{'%username%':user.displayname}) }}
+                                            </button>
+                                        </form>
+                                    </li>
                                 {% else %}
-                                    <li><a href="{{ path('useraction', { 'action': 'enable', 'id': user.id }) }}">{{ __('Enable %username%',{'%username%':user.displayname}) }}</a></li>
+                                    <li>
+                                        <form action="{{ path('useraction', { 'action': 'enable', 'id': user.id }) }}" method="POST">
+                                            {% include('_sub_csrf_token.twig') %}
+                                            <button type="submit" class="btn btn-link">
+                                            {{ __('Enable %username%',{'%username%':user.displayname}) }}
+                                            </button>
+                                        </form>
+                                    </li>
                                 {% endif %}
-                                <li><a href="{{ path('useraction', { 'action': 'delete', 'id': user.id, token: token() }) }}" class="confirm" data-confirm="{{ __('Are you sure you want to delete %username%?',{'%username%':user.displayname}) }}">{{ __('Delete %username%',{'%username%':user.displayname}) }}</a></li>
+                                <li>
+                                    <form action="{{ path('useraction', { 'action': 'delete', 'id': user.id }) }}" method="POST">
+                                        {% include('_sub_csrf_token.twig') %}
+                                        <button type="submit" class="btn btn-link confirm"
+                                        data-confirm="{{ __('Are you sure you want to delete %username%?',{'%username%':user.displayname}) }}" >
+                                        {{ __('Delete %username%',{'%username%':user.displayname}) }}
+                                        </button>
+                                    </form>
+                                </li>
                                 <li class="divider"></li>
                                 <li><a class="nolink">{{ __('Last seen') }}: <strong>{% if user.lastseen>"1000" %}{{ user.lastseen|date("Y-m-d H:i") }}{% else %}-{% endif %}</strong></a></li>
                                 <li><a class="nolink">{{ __('Last known IP') }}: <strong>{% if user.lastip!="" %}{{ user.lastip }}{% else %}-{% endif %}</strong></a></li>
@@ -65,6 +93,10 @@
 
         </table>
 
+        <h2><strong>{{ __("Roles and Permissions") }}</strong></h2>
+
+        <p>{{ __('The settings for roles and permissions are stored in <code>%permissions%</code>.', {'%permissions%': 'permissions.yml'}) }}</p>
+        <a class="btn btn-small" href="{{ path('fileedit', { 'file': 'app/config/permissions.yml'}) }}">{{ __("Roles and Permissions") }}</a>
 
         <h2><strong>{{ __("Current sessions") }}</strong></h2>
 
@@ -83,7 +115,10 @@
                     <td><time class="moment" datetime="{{ session.lastseen|date("c") }}" title="{{ session.lastseen }}">{{ session.lastseen }}</time></td>
                     <td><time class="moment" datetime="{{ session.validity|date("c") }}" title="{{ session.validity }}">{{ session.validity }}</time></td>
                     <td>{{ session.ip }}</td>
-                    <td>{{ session.useragent }}</td>
+                    <td>
+                        <span class="useragent label info-pop" data-ua="{{ session.useragent }}" data-html="true"
+                              data-content="{{ session.useragent }}">{{ session.useragent|trimtext(40) }}</span>
+                    </td>
 
                 </tr>
 
@@ -108,5 +143,19 @@
     </aside>
 </div>
 
+{# parsing the useragents into something more readable. #}
+<script type="text/javascript" src="{{ paths.app }}view/js/ua-parser.min.js"></script>
+<script>
+    jQuery(function($) {
+        var useragents = $('.useragent').each(function(e){
+            console.log($(this).data('ua'));
+
+            var parser = new UAParser($(this).data('ua'));
+            var result = parser.getResult();
+            $(this).html(result.browser.name + " " + result.browser.major + " / " + result.os.name + " " + result.os.version);
+        });
+
+    });
+</script>
 
 {% include '_footer.twig' %}

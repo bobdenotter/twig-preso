@@ -24,16 +24,20 @@
  * 'r' (resize) -> zc=3
  */
 
-// echo "<pre>\n" . print_r($_SERVER, true) . "</pre>\n";
-
-if (isset($_SERVER['REDIRECT_URL'])) {
+// @see: http://stackoverflow.com/questions/6483912/php-serverredirect-url-vs-serverrequest-uri
+if (!empty($_SERVER['REDIRECT_URL']) &&
+    (strpos($_SERVER['REDIRECT_URL'], 'timthumb.php') === false) &&
+    (strpos($_SERVER['REDIRECT_URL'], 'index.php') === false)) {
     $requesturi = $_SERVER['REDIRECT_URL'];
-}
-else {
+} else {
     $requesturi = $_SERVER['REQUEST_URI'];
 }
 
-$res = preg_match("^thumbs/([0-9]+)x([0-9]+)([a-z]*)/(.*)^i", $requesturi , $matches);
+// Make sure we don't get cruft after the '?'.
+$parsed_url = parse_url($requesturi);
+
+// Match the width, height, cropping type and filename..
+$res = preg_match("^thumbs/([0-9]+)x([0-9]+)([a-z]*)/(.*)^i", $parsed_url['path'] , $matches);
 
 if (empty($matches[1]) || empty($matches[2]) || empty($matches[4])) {
     die("Malformed thumbnail URL. Should look like '/thumbs/320x240c/filename.jpg'.");
@@ -42,11 +46,7 @@ if (empty($matches[1]) || empty($matches[2]) || empty($matches[4])) {
 /**
  * Bolt specific: Set BOLT_PROJECT_ROOT_DIR, and Bolt-specific settings..
  */
-if (substr(__DIR__, -20) == '/bolt-public/classes') { // installed bolt with composer
-    require_once __DIR__ . '/../../../vendor/bolt/bolt/app/bootstrap.php';
-} else {
-    require_once __DIR__ . '/../bootstrap.php';
-}
+require_once __DIR__ . '/../bootstrap.php';
 
 // Let's get on with the rest..
 $yamlparser = new Symfony\Component\Yaml\Parser();
@@ -68,7 +68,7 @@ define('ERROR_IMAGE', !empty($config['general']['thumbnails']['error_image'])
 
 // A CLI-server hack
 "cli-server" === php_sapi_name() && !defined('FILE_CACHE_DIRECTORY')
-    && define('FILE_CACHE_DIRECTORY', BOLT_PROJECT_ROOT_DIR . '/app/' . 'cache/thumbs/');
+    && define('FILE_CACHE_DIRECTORY', BOLT_CACHE_DIR . '/thumbs/');
 
 /* This might look a bit odd, but for now it's a convenient way to make sure we're serving images from
    either files/ or theme/.
@@ -77,7 +77,7 @@ define('ERROR_IMAGE', !empty($config['general']['thumbnails']['error_image'])
 $_GET['src'] = "files/".urldecode($matches[4]);
 $_GET['src'] = str_replace("files/files/", "files/", $_GET['src']);
 $_GET['src'] = str_replace("files/theme/", "theme/", $_GET['src']);
-
+$_GET['requestname'] = $matches[0];
 $_GET['w'] = $matches[1];
 $_GET['h'] = $matches[2];
 
@@ -132,7 +132,7 @@ if(! defined('FILE_CACHE_TIME_BETWEEN_CLEANS'))	define ('FILE_CACHE_TIME_BETWEEN
 if(! defined('FILE_CACHE_MAX_FILE_AGE') ) 	define ('FILE_CACHE_MAX_FILE_AGE', 86400);				// How old does a file have to be to be deleted from the cache
 if(! defined('FILE_CACHE_SUFFIX') ) 		define ('FILE_CACHE_SUFFIX', '.timthumb.txt');			// What to put at the end of all files in the cache directory so we can identify them
 if(! defined('FILE_CACHE_PREFIX') ) 		define ('FILE_CACHE_PREFIX', 'timthumb');				// What to put at the beg of all files in the cache directory so we can identify them
-if(! defined('FILE_CACHE_DIRECTORY') ) 		define ('FILE_CACHE_DIRECTORY', '../cache/thumbs/');				// Directory where images are cached. Left blank it will use the system temporary directory (which is better for security)
+if(! defined('FILE_CACHE_DIRECTORY') ) 		define ('FILE_CACHE_DIRECTORY', BOLT_CACHE_DIR . '/thumbs/');	// Directory where images are cached. Left blank it will use the system temporary directory (which is better for security)
 if(! defined('MAX_FILE_SIZE') )				define ('MAX_FILE_SIZE', 10485760);						// 10 Megs is 10485760. This is the max internal or external file size that we'll process.
 if(! defined('CURL_TIMEOUT') )				define ('CURL_TIMEOUT', 20);							// Timeout duration for Curl. This only applies if you have Curl installed and aren't using PHP's default URL fetching mechanism.
 if(! defined('WAIT_BETWEEN_FETCH_ERRORS') )	define ('WAIT_BETWEEN_FETCH_ERRORS', 3600);				//Time to wait between errors fetching remote file
@@ -323,7 +323,6 @@ class timthumb {
 			header('Expires: ' . gmdate ('D, d M Y H:i:s', time()));
 			echo $imgData;
 			return false;
-			exit(0);
 		}
 		if(preg_match('/^https?:\/\/[^\/]+/i', $this->src)){
 			$this->debug(2, "Is a request for an external URL: " . $this->src);
@@ -353,11 +352,17 @@ class timthumb {
 			}
 		}
 
-		$cachePrefix = ($this->isURL ? '_ext_' : '_int_');
+		$this->setCacheFile();
+		$this->debug(2, "Cache file is: " . $this->cachefile);
+
+		return true;
+	}
+    protected function setCacheFile() {
+        $cachePrefix = ($this->isURL ? '_ext_' : '_int_');
 		if($this->isURL){
 			$arr = explode('&', $_SERVER ['QUERY_STRING']);
 			asort($arr);
-			$this->cachefile = $this->cacheDirectory . '/' . FILE_CACHE_PREFIX . $cachePrefix . md5($this->salt . implode('', $arr) . $this->fileCacheVersion) . FILE_CACHE_SUFFIX;
+			$this->cachefile = $this->cacheDirectory . FILE_CACHE_PREFIX . $cachePrefix . md5($this->salt . implode('', $arr) . $this->fileCacheVersion) . FILE_CACHE_SUFFIX;
 		} else {
 			$this->localImage = $this->getLocalImagePath($this->src);
 			if(! $this->localImage){
@@ -369,12 +374,9 @@ class timthumb {
 			$this->debug(1, "Local image path is {$this->localImage}");
 			$this->localImageMTime = @filemtime($this->localImage);
 			//We include the mtime of the local file in case in changes on disk.
-			$this->cachefile = $this->cacheDirectory . '/' . FILE_CACHE_PREFIX . $cachePrefix . md5($this->salt . $this->localImageMTime . $_SERVER ['QUERY_STRING'] . $this->fileCacheVersion) . FILE_CACHE_SUFFIX;
+			$this->cachefile = $this->cacheDirectory . FILE_CACHE_PREFIX . $cachePrefix . md5($this->salt . $this->localImageMTime . $_SERVER ['QUERY_STRING'] . $this->fileCacheVersion) . FILE_CACHE_SUFFIX;
 		}
-		$this->debug(2, "Cache file is: " . $this->cachefile);
-
-		return true;
-	}
+    }
 	public function __destruct(){
 		foreach($this->toDeletes as $del){
 			$this->debug(2, "Deleting temp file $del");
@@ -410,7 +412,12 @@ class timthumb {
 	protected function handleErrors(){
 		if($this->haveErrors()){
 			if(NOT_FOUND_IMAGE && $this->is404()){
-				if($this->serveImg(NOT_FOUND_IMAGE)){
+                $this->src = realpath(__DIR__.'/'.NOT_FOUND_IMAGE);
+                $this->setCacheFile();
+                $this->processImageAndWriteToCache(realpath(__DIR__.'/'.NOT_FOUND_IMAGE));
+                if ($this->serveCacheFile()) {
+                    exit(0);
+                } elseif($this->serveImg(NOT_FOUND_IMAGE)){
 					exit(0);
 				} else {
 					$this->error("Additionally, the 404 image that is configured could not be found or there was an error serving it.");
@@ -583,6 +590,7 @@ class timthumb {
 		return false;
 	}
 	protected function processImageAndWriteToCache($localImage){
+		global $config;
 		$sData = getimagesize($localImage);
 		$origType = $sData[2];
 		$mimeType = $sData['mime'];
@@ -653,6 +661,17 @@ class timthumb {
 			$new_height = floor ($height * ($new_width / $width));
 		} else if ($new_height && !$new_width) {
 			$new_width = floor ($width * ($new_height / $height));
+		}
+
+		// Bolt specific - don't upscale images unless explicitly told to
+		if( !isset($config['general']['thumbnails']['allow_upscale']) ||
+            $config['general']['thumbnails']['allow_upscale'] == false ) {
+			if( $new_width > $width ) {
+				$new_width = $width;
+			}
+			if( $new_height > $height ) {
+				$new_height = $height;
+			}
 		}
 
 		// scale down and add borders
@@ -894,6 +913,10 @@ class timthumb {
 		file_put_contents($tempfile4, $this->filePrependSecurityBlock . $imgType . ' ?' . '>'); //6 extra bytes, first 3 being image type
 		file_put_contents($tempfile4, $fp, FILE_APPEND);
 		fclose($fp);
+
+        // Added for Bolt: copy the cachefile to a 'nicely named file' in thumbs/
+        $this->boltSaveCopy($tempfile);
+
 		@unlink($tempfile);
 		$this->debug(3, "Locking and replacing cache file.");
 		$lockFile = $this->cachefile . '.lock';
@@ -918,6 +941,38 @@ class timthumb {
 		imagedestroy($image);
 		return true;
 	}
+
+    /**
+     * Saves a copy of the created thumbnail with a 'nice' filename, like /thumbs/320x240/sample.jpg.
+     * This makes it possible for subsequent requests to the same image, to circumvent the PHP layer altogether.
+     *
+     * @param $filename
+     */
+    protected function boltSaveCopy($filename)
+    {
+        global $config;
+
+        if ($config['general']['thumbnails']['save_files'] != true) {
+            return;
+        }
+
+        $fileSystem = new Symfony\Component\Filesystem\Filesystem;
+
+        // Make sure the paths exists. Try to create it, if possible.
+        $pathparts = explode("/", $_GET['requestname']);
+        $path      = BOLT_PROJECT_ROOT_DIR
+                        . DIRECTORY_SEPARATOR
+                        . implode(DIRECTORY_SEPARATOR,
+                                  array_slice($pathparts, 0, (count($pathparts)-1)));
+        $fileSystem->mkdir($path);
+
+        // Copy the file, and chmod
+        $newfilename = dirname(dirname(__DIR__)) . "/" . urldecode($_GET['requestname']);
+        copy($filename, $newfilename);
+        @chmod($newfilename, octdec('0666'));
+
+    }
+
 	protected function calcDocRoot(){
 		$docRoot = @$_SERVER['DOCUMENT_ROOT'];
 		if (defined('BOLT_WEB_DIR')) {
@@ -1319,8 +1374,13 @@ class timthumb {
 
 	}
 	protected function serveImg($file){
-        if (!file_exists($file)) {
-            $file = BOLT_PROJECT_ROOT_DIR . '/app/' . substr($file, 3);
+        if (! file_exists($file)) {
+            $relfile = substr($file, 3);
+            if (BOLT_COMPOSER_INSTALLED) {
+                $file = BOLT_WEB_DIR . '/bolt-public/' . $relfile;
+            } else {
+                $file = BOLT_PROJECT_ROOT_DIR . '/app/' . $relfile;
+            }
         }
 		$s = getimagesize($file);
 		if(! ($s && $s['mime'])){

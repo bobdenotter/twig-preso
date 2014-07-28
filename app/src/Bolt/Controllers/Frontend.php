@@ -16,27 +16,35 @@ class Frontend
 {
     public static function before(Request $request, \Bolt\Application $app)
     {
+        // Start the 'stopwatch' for the profiler.
+        $app['stopwatch']->start('bolt.frontend.before');
+
         // If there are no users in the users table, or the table doesn't exist. Repair
         // the DB, and let's add a new user.
-        if (!$app['storage']->getIntegrityChecker()->checkUserTableIntegrity() || !$app['users']->getUsers()) {
+        if (!$app['users']->getUsers()) {
+            //!$app['storage']->getIntegrityChecker()->checkUserTableIntegrity() ||
             $app['session']->getFlashBag()->set('info', __("There are no users in the database. Please create the first user."));
+
             return redirect('useredit', array('id' => ""));
         }
 
-        $app['debugbar']     = true;
+        $app['debugbar'] = true;
         $app['htmlsnippets'] = true;
 
         // If we are in maintenance mode and current user is not logged in, show maintenance notice.
+        // @see /app/app.php, $app->error()
         if ($app['config']->get('general/maintenance_mode')) {
-
-            $user = $app['users']->getCurrentUser();
-            $template = $app['config']->get('general/maintenance_template');
-            $body = $app['twig']->render($template);
-
-            if($user['userlevel'] < 2) {
+            if (!$app['users']->isAllowed('maintenance-mode')) {
+                $template = $app['config']->get('general/maintenance_template');
+                $body = $app['render']->render($template);
                 return new Response($body, 503);
             }
         }
+
+        // Stop the 'stopwatch' for the profiler.
+        $app['stopwatch']->stop('bolt.frontend.before');
+
+
     }
 
     public static function homepage(Silex\Application $app)
@@ -45,11 +53,17 @@ class Frontend
             $template = $app['config']->get('general/homepage_template');
             $content = $app['storage']->getContent($app['config']->get('general/homepage'));
 
+            // Set the 'editlink', if $content contains a valid record.
+            if (!empty($content->contenttype['slug'])) {
+                $app['editlink'] = path('editcontent', array('contenttypeslug' => $content->contenttype['slug'], 'id' => $content->id));
+                $app['edittitle'] = $content->getTitle();
+            }
+
             if (is_array($content)) {
                 $first = current($content);
                 $app['twig']->addGlobal('records', $content);
                 $app['twig']->addGlobal($first->contenttype['slug'], $content);
-            } else if (!empty($content)) {
+            } elseif (!empty($content)) {
                 $app['twig']->addGlobal('record', $content);
                 $app['twig']->addGlobal($content->contenttype['singular_slug'], $content);
             }
@@ -62,7 +76,7 @@ class Frontend
 
         $app['log']->setValue('templatechosen', $app['config']->get('general/theme') . "/$template ($chosen)");
 
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
     }
 
     public static function record(Silex\Application $app, $contenttypeslug, $slug)
@@ -70,7 +84,7 @@ class Frontend
 
         $contenttype = $app['storage']->getContentType($contenttypeslug);
 
-        $slug = makeSlug($slug);
+        $slug = makeSlug($slug, -1);
 
         // First, try to get it by slug.
         $content = $app['storage']->getContent($contenttype['slug'], array('slug' => $slug, 'returnsingle' => true));
@@ -96,10 +110,12 @@ class Frontend
         // Fallback: If file is not OK, show an error page
         $filename = $app['paths']['themepath'] . "/" . $template;
         if (!file_exists($filename) || !is_readable($filename)) {
-            $error = sprintf("No template for '%s' defined. Tried to use '%s/%s'.",
+            $error = sprintf(
+                "No template for '%s' defined. Tried to use '%s/%s'.",
                 $content->getTitle(),
                 basename($app['config']->get('general/theme')),
-                $template);
+                $template
+            );
             $app['log']->setValue('templateerror', $error);
             $app->abort(404, $error);
         }
@@ -108,6 +124,7 @@ class Frontend
         $app['canonicalpath'] = $content->link();
         $app['paths'] = getPaths($app);
         $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttype['slug'], 'id' => $content->id));
+        $app['edittitle'] = $content->getTitle();
 
         // Make sure we can also access it as {{ page.title }} for pages, etc. We set these in the global scope,
         // So that they're also available in menu's and templates rendered by extensions.
@@ -115,7 +132,7 @@ class Frontend
         $app['twig']->addGlobal($contenttype['singular_slug'], $content);
 
         // Render the template and return.
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
 
     }
 
@@ -135,10 +152,12 @@ class Frontend
         // Fallback: If file is not OK, show an error page
         $filename = $app['paths']['themepath'] . "/" . $template;
         if (!file_exists($filename) || !is_readable($filename)) {
-            $error = sprintf("No template for '%s' defined. Tried to use '%s/%s'.",
+            $error = sprintf(
+                "No template for '%s' defined. Tried to use '%s/%s'.",
                 $content->getTitle(),
                 basename($app['config']->get('general/theme')),
-                $template);
+                $template
+            );
             $app['log']->setValue('templateerror', $error);
             $app->abort(404, $error);
         }
@@ -148,7 +167,7 @@ class Frontend
         $app['twig']->addGlobal('record', $content);
         $app['twig']->addGlobal($contenttype['singular_slug'], $content);
 
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
 
     }
 
@@ -187,26 +206,26 @@ class Frontend
 
         $app['log']->setValue('templatechosen', $app['config']->get('general/theme') . "/$template ($chosen)");
 
-
         // Fallback: If file is not OK, show an error page
         $filename = $app['paths']['themepath'] . "/" . $template;
         if (!file_exists($filename) || !is_readable($filename)) {
-            $error = sprintf("No template for '%s'-listing defined. Tried to use '%s/%s'.",
+            $error = sprintf(
+                "No template for '%s'-listing defined. Tried to use '%s/%s'.",
                 $contenttypeslug,
                 basename($app['config']->get('general/theme')),
-                $template);
+                $template
+            );
             $app['log']->setValue('templateerror', $error);
             $app->abort(404, $error);
         }
-
-        // $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttypeslug, 'id' => $content->id));
 
         // Make sure we can also access it as {{ pages }} for pages, etc. We set these in the global scope,
         // So that they're also available in menu's and templates rendered by extensions.
         $app['twig']->addGlobal('records', $content);
         $app['twig']->addGlobal($contenttype['slug'], $content);
+        $app['twig']->addGlobal('contenttype', $contenttype['name']);
 
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
 
     }
 
@@ -228,7 +247,6 @@ class Frontend
             $taxonomyslug = $taxonomytype['slug'];
         }
 
-
         if (!$content) {
             $app->abort(404, "Content for '$taxonomyslug/$slug' not found.");
         }
@@ -236,59 +254,47 @@ class Frontend
         $chosen = "taxonomy";
 
         // Set the template based on the (optional) setting in taxonomy.yml, or fall back to default listing template
-        if ($app['config']->get('taxonomy/'.$taxonomyslug.'/listing_template')) {
-            $template = $app['config']->get('taxonomy/'.$taxonomyslug.'/listing_template');
+        if ($app['config']->get('taxonomy/' . $taxonomyslug . '/listing_template')) {
+            $template = $app['config']->get('taxonomy/' . $taxonomyslug . '/listing_template');
         } else {
             $template = $app['config']->get('general/listing_template');
         }
 
         $app['log']->setValue('templatechosen', $app['config']->get('general/theme') . "/$template ($chosen)");
 
-
         // Fallback: If file is not OK, show an error page
         $filename = $app['paths']['themepath'] . "/" . $template;
         if (!file_exists($filename) || !is_readable($filename)) {
-            $error = sprintf("No template for '%s'-listing defined. Tried to use '%s/%s'.",
+            $error = sprintf(
+                "No template for '%s'-listing defined. Tried to use '%s/%s'.",
                 $taxonomyslug,
                 basename($app['config']->get('general/theme')),
-                $template);
+                $template
+            );
             $app['log']->setValue('templateerror', $error);
             $app->abort(404, $error);
         }
 
-        // $app['editlink'] = path('editcontent', array('contenttypeslug' => $contenttypeslug, 'id' => $content->id));
+        $name = $slug;
+        // Look in taxonomies in 'content', to get a display value for '$slug', perhaps.
+        foreach($content as $record) {
+            $flat = \Util::array_flatten($record->taxonomy);
+            $key = $app['paths']['root'] . $taxonomytype['slug'] . '/' . $slug;
+            if (isset($flat[$key])) {
+                $name = $flat[$key];
+            }
+            $key = $app['paths']['root'] . $taxonomytype['singular_slug'] . '/' . $slug;
+            if (isset($flat[$key])) {
+                $name = $flat[$key];
+            }
+        }
 
         $app['twig']->addGlobal('records', $content);
-        $app['twig']->addGlobal('slug', $slug);
-        $app['twig']->addGlobal('taxonomy', $app['config']->get('taxonomy/'.$taxonomyslug));
+        $app['twig']->addGlobal('slug', $name);
+        $app['twig']->addGlobal('taxonomy', $app['config']->get('taxonomy/' . $taxonomyslug));
         $app['twig']->addGlobal('taxonomytype', $taxonomyslug);
 
-        return $app['twig']->render($template);
-
-    }
-
-    public static function searchNotWeighted(Request $request, Silex\Application $app)
-    {
-        //$searchterms =  safeString($request->get('search'));
-        $template = $app['config']->get('general/search_results_template', $app['config']->get('general/listing_template'));
-
-        // @todo Preparation for stage 2
-        //$resultsPP = (int) $app['config']->get('general/search_results_records');
-        //$page = (!empty($_GET['page']) ? $_GET['page'] : 1);
-
-        //$parameters = array('limit' => $resultsPP, 'page' => $page, 'filter' => $request->get('search'));
-
-        $search = $request->get('search');
-        $parameters = array('filter' => $search, 'status' => 'published');
-
-        //$content = $searchterms . " and " . $resultsPP;
-        $content = $app['storage']->searchAllContentTypes($parameters);
-        //$content = $app['storage']->searchContentType('entries', $searchterms, $parameters);
-
-        $app['twig']->addGlobal('records', $content);
-        $app['twig']->addGlobal('search', $search);
-
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
 
     }
 
@@ -297,14 +303,14 @@ class Frontend
         $q = '';
         if ($request->query->has('q')) {
             $q = $request->get('q');
-        }
-        else if ($request->query->has('search')) {
+        } elseif ($request->query->has('search')) {
             $q = $request->get('search');
         }
+        $q = cleanPostedData($q, false);
 
         // Make paging work
         $page_size = 10;
-        $page      = 1;
+        $page = 1;
         if ($request->query->has('page')) {
             $page = intval($request->get('page'));
         }
@@ -312,17 +318,16 @@ class Frontend
             $page = 1;
         }
         $offset = ($page - 1) * $page_size;
-        $limit  = $page_size;
+        $limit = $page_size;
 
         // set-up filters from URL
         $filters = array();
-        foreach($request->query->all() as $key => $value) {
+        foreach ($request->query->all() as $key => $value) {
             if (strpos($key, '_') > 0) {
                 list($contenttypeslug, $field) = explode('_', $key, 2);
                 if (isset($filters[$contenttypeslug])) {
                     $filters[$contenttypeslug][$field] = $value;
-                }
-                else {
+                } else {
                     $contenttype = $app['storage']->getContentType($contenttypeslug);
                     if (is_array($contenttype)) {
                         $filters[$contenttypeslug] = array(
@@ -348,7 +353,7 @@ class Frontend
         );
 
         $GLOBALS['pager']['search'] = $pager;
-        $GLOBALS['pager']['search']['link'] = '/search?q='.rawurlencode($q).'&page=';
+        $GLOBALS['pager']['search']['link'] = '/search?q=' . rawurlencode($q) . '&page=';
 
         $app['twig']->addGlobal('records', $result['results']);
         $app['twig']->addGlobal('search', $result['query']['use_q']);
@@ -356,8 +361,26 @@ class Frontend
 
         $template = $app['config']->get('general/search_results_template', $app['config']->get('general/listing_template'));
 
-        return $app['twig']->render($template);
+        return $app['render']->render($template);
     }
 
+    /**
+     * Renders the specified template from the current theme in response to a request without
+     * loading any content.
+     */
+    public static function template(Silex\Application $app, $template) {
+      // Add the template extension if it is missing
+      if(!preg_match('/\\.twig$/i', $template))
+        $template .= '.twig';
+
+      $themePath    = realpath($app['paths']['themepath'] . '/');
+      $templatePath = realpath($app['paths']['themepath'] . '/' . $template);
+
+      // Verify that the resulting template path is located in the theme directory
+      if($themePath !== substr($templatePath, 0, strlen($themePath)))
+        throw new \Exception("Invalid template: $template");
+
+      return $app['render']->render(substr($templatePath, strlen($themePath)));
+    }
 
 }

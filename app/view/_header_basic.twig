@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{ app.locale|default('en') }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
@@ -9,10 +9,14 @@
         {% if title is defined %}- {{ title|striptags }}{% endif %}
     </title>
 
-    <script src="{{ paths.app }}view/js/jquery-1.10.2.min.js"></script>
+    <script src="{{ paths.app }}view/js/jquery-1.11.1.min.js"></script>
     <script src="{{ paths.app }}view/js/underscore-min.js"></script>
     <script src="{{ paths.app }}view/js/backbone-min.js"></script>
     <script src="{{ paths.app }}view/js/jquery-ui-1.10.3.custom.min.js"></script>
+
+    {% if app.locale is defined and app.locale != 'en' and file_exists(paths.apppath ~ '/view/js/i18n/datepicker-' ~ app.locale ~ '.js') %}
+        <script src="{{ paths.app }}view/js/i18n/datepicker-{{ app.locale }}.js"></script>
+    {% endif %}
 
     <link rel="stylesheet" type="text/css" href="{{ paths.app }}view/css/smoothness/jquery-ui-1.10.3.custom.min.css">
 
@@ -36,16 +40,15 @@
     <link rel="stylesheet" href="{{ paths.app }}view/lib/upload/jquery.fileupload-ui.css">
 
     <script src="{{ paths.app }}view/js/moment.min.js"></script>
-    <script src="{{ paths.app }}view/js/moment-langs.min.js"></script>
     <script type="text/javascript">
         moment.lang('{{ app.locale|default('en') }}');
+        var ckeditor_lang="{{ app.locale|default('en') }}";
     </script>
 
-    <script>var ckeditor_lang="{{ app.locale|default('en') }}";</script>
+    <script src="{{ paths.app }}view/js/modernizr.custom.2.8.2.js"></script>
     <script src="{{ paths.app }}view/js/bolt.js"></script>
 
-    {# <link rel="stylesheet" href="/app/view/css/responsivebar.css"> #}
-    <link href='http://fonts.googleapis.com/css?family=Source+Sans+Pro:400,600,400italic&subset=latin,latin-ext' rel='stylesheet' type='text/css'>
+    <link href='//fonts.googleapis.com/css?family=Source+Sans+Pro:400,600,400italic&subset=latin,latin-ext' rel='stylesheet' type='text/css'>
     <link rel="stylesheet" href="{{ paths.app }}view/css/bolt.css">
 
     <link rel="shortcut icon" href="{{ paths.app }}view/img/favicon-bolt.ico">

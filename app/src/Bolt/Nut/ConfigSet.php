@@ -12,7 +12,7 @@ class ConfigSet extends BaseCommand
     {
         $this
             ->setName('config:set')
-            ->setDescription('Set a value from config.yml.')
+            ->setDescription('Set a value in config.yml.')
             ->addArgument('key', InputArgument::REQUIRED, 'The key you wish to get.')
             ->addArgument('value', InputArgument::REQUIRED, 'The value you wish to set it to.');
     }
@@ -21,7 +21,7 @@ class ConfigSet extends BaseCommand
     {
         $key = $input->getArgument('key');
         $value = $input->getArgument('value');
-        $file = $this->app['paths']['apppath']."/config/config.yml";
+        $file = BOLT_CONFIG_DIR . "/config.yml";
 
         $yaml = new \Bolt\YamlUpdater($file);
         $result = $yaml->change($key, $value);

@@ -28,7 +28,7 @@ class ExtensionsEnable extends BaseCommand
         $lines = array();
         $update = false;
 
-        foreach($extensions as $key => $extension) {
+        foreach ($extensions as $key => $extension) {
             if ($extension['enabled']) {
                 $enabled[] = $key;
             }
@@ -47,7 +47,7 @@ class ExtensionsEnable extends BaseCommand
 
         if ($update) {
             $key = "enabled_extensions";
-            $file = $this->app['paths']['apppath']."/config/config.yml";
+            $file = BOLT_CONFIG_DIR . "/config.yml";
             $yaml = new \Bolt\YamlUpdater($file);
             $result = $yaml->change($key, $enabled);
 

@@ -38,6 +38,7 @@ class Users
         $this->authtokentable = $prefix . "authtoken";
         $this->users = array();
         $this->session = $app['session'];
+        $this->remoteIP = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : "";
 
         // Set 'validsession', to see if the current session is valid.
         $this->validsession = $this->checkValidSession();
@@ -61,7 +62,7 @@ class Users
             'contentaction' => self::EDITOR,
             'about' => self::EDITOR,
             'extensions' => self::DEVELOPER,
-            'files' => self::ADMIN,
+            'files' => self::EDITOR,
             'files:config' => self::DEVELOPER,
             'files:theme' => self::DEVELOPER,
             'files:uploads' => self::ADMIN,
@@ -81,7 +82,18 @@ class Users
     public function saveUser($user)
     {
         // Make an array with the allowed columns. these are the columns that are always present.
-        $allowedcolumns = array('id', 'username', 'password', 'email', 'lastseen', 'lastip', 'displayname', 'userlevel', 'enabled', 'contenttypes');
+        $allowedcolumns = array(
+                'id',
+                'username',
+                'password',
+                'email',
+                'lastseen',
+                'lastip',
+                'displayname',
+                'enabled',
+                'stack',
+                'roles',
+            );
 
         // unset columns we don't need to store..
         foreach ($user as $key => $value) {
@@ -104,10 +116,6 @@ class Users
             $user['lastseen'] = "1900-01-01";
         }
 
-        if (empty($user['userlevel'])) {
-            $user['userlevel'] = key(array_slice($this->getUserLevels(), -1));
-        }
-
         if (empty($user['enabled']) && $user['enabled']!== 0) {
             $user['enabled'] = 1;
         }
@@ -124,15 +132,25 @@ class Users
             $user['failedlogins'] = 0;
         }
 
-        // Serialize the contenttypes..
-        if (empty($user['contenttypes'])) {
-            $user['contenttypes'] = array();
+        // Make sure the 'stack' is set.
+        if (empty($user['stack'])) {
+            $user['stack'] = json_encode(array());
+        } elseif (is_array($user['stack'])) {
+            $user['stack'] = json_encode($user['stack']);
         }
-        $user['contenttypes'] = serialize($user['contenttypes']);
+
+        // Serialize roles array
+        if (empty($user['roles']) || !is_array($user['roles'])) {
+            $user['roles'] = '[]';
+        } else {
+            $user['roles'] = json_encode(array_values(array_unique($user['roles'])));
+        }
+
 
         // Decide whether to insert a new record, or update an existing one.
         if (empty($user['id'])) {
             unset($user['id']);
+
             return $this->db->insert($this->usertable, $user);
         } else {
             return $this->db->update($this->usertable, $user, array('id' => $user['id']));
@@ -165,38 +183,35 @@ class Users
             if ($database = $this->getUser($this->currentuser['id'])) {
                 // Update the session with the user from the database.
                 $this->currentuser = array_merge($this->currentuser, $database);
+            } else {
+                // User doesn't exist anymore
+                $this->logout();
+                return false;
+            }
+            if (!$this->currentuser['enabled']) {
+                // user has been disabled since logging in
+                $this->logout();
+                return false;
             }
         } else {
             // no current user, check if we can resume from authtoken cookie, or return without doing the rest.
             $result = $this->loginAuthtoken();
+
             return $result;
         }
 
-        if (intval($this->currentuser['userlevel']) <= self::ANONYMOUS) {
-            $this->logout();
-            return false;
-        }
-
-        // set the rights for each of the contenttypes for this user.
-        foreach ($this->app['config']->get('contenttypes') as $key => $contenttype) {
-            if (in_array($key, $this->currentuser['contenttypes'])) {
-                $this->allowed['contenttype:' . $key] = self::EDITOR;
-            } else {
-                $this->allowed['contenttype:' . $key] = self::ADMIN;
-            }
-        }
-
-        $key = $this->getAuthtoken($this->currentuser['username']);
+        $key = $this->getAuthToken($this->currentuser['username']);
 
         if ($key != $this->currentuser['sessionkey']) {
             $this->app['log']->add("keys don't match. Invalidating session: $key != " . $this->currentuser['sessionkey'], 2);
             $this->app['log']->add("Automatically logged out user '".$this->currentuser['username']."': Session data didn't match.", 3, '', 'issue');
             $this->logout();
+
             return false;
         }
 
         // Check if user is _still_ allowed to log on..
-        if (($this->currentuser['userlevel'] < self::EDITOR) || !$this->currentuser['enabled']) {
+        if (!$this->isAllowed('login') || !$this->currentuser['enabled']) {
             $this->logout();
             return false;
         }
@@ -214,48 +229,49 @@ class Users
      * Get a key to identify the session with.
      *
      * @param  string $name
+     * @param string $salt
      * @return string
      */
-    private function getAuthtoken($name = "", $salt = "")
+    private function getAuthToken($name = "", $salt = "")
     {
 
         if (empty($name)) {
             return false;
         }
 
-        $key = $name . "-" . $salt;
+        $seed = $name . "-" . $salt;
 
         if ($this->app['config']->get('general/cookies_use_remoteaddr')) {
-            $key .= "-". $_SERVER['REMOTE_ADDR'];
+            $seed .= "-". $this->remoteIP;
         }
         if ($this->app['config']->get('general/cookies_use_browseragent')) {
-            $key .= "-". $_SERVER['HTTP_USER_AGENT'];
+            $seed .= "-". $_SERVER['HTTP_USER_AGENT'];
         }
         if ($this->app['config']->get('general/cookies_use_httphost')) {
-            $key .= "-". (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST']: $_SERVER['SERVER_NAME']);
+            $seed .= "-". (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST']: $_SERVER['SERVER_NAME']);
         }
 
-        $key = md5($key);
+        $token = md5($seed);
 
-        return $key;
+        return $token;
 
     }
 
     /**
      * Set the Authtoken cookie and DB-entry. If it's already present, update it.
      */
-    private function setAuthtoken()
+    private function setAuthToken()
     {
 
-        $salt = makekey(12);
+        $salt = $this->app['randomgenerator']->generateString(12);
         $token = array(
             'username' => $this->currentuser['username'],
-            'token' => $this->getAuthtoken($this->currentuser['username'], $salt),
+            'token' => $this->getAuthToken($this->currentuser['username'], $salt),
             'salt' => $salt,
             'validity' => date('Y-m-d H:i:s', time() + $this->app['config']->get('general/cookies_lifetime')),
             'ip' => $_SERVER['REMOTE_ADDR'],
             'lastseen' => date('Y-m-d H:i:s'),
-            'useragent' => getBrowserInfo()
+            'useragent' => $_SERVER['HTTP_USER_AGENT']
         );
 
         // Update or set the authtoken cookie..
@@ -264,7 +280,9 @@ class Users
             $token['token'],
             time() + $this->app['config']->get('general/cookies_lifetime'),
             '/',
-            $this->app['config']->get('general/cookies_domain')
+            $this->app['config']->get('general/cookies_domain'),
+            $this->app['config']->get('general/cookies_https_only'),
+            true
         );
 
         try {
@@ -284,6 +302,54 @@ class Users
         }
 
     }
+
+    /**
+     * Generate a Anti-CSRF-like token, to use in GET requests for stuff that ought to be POST-ed forms.
+     *
+     * @return string $token
+     */
+    function getAntiCSRFToken()
+    {
+        $seed = $this->app['request']->cookies->get('bolt_session');
+
+        if ($this->app['config']->get('general/cookies_use_remoteaddr')) {
+            $seed .= "-". $this->remoteIP;
+        }
+        if ($this->app['config']->get('general/cookies_use_browseragent')) {
+            $seed .= "-". $_SERVER['HTTP_USER_AGENT'];
+        }
+        if ($this->app['config']->get('general/cookies_use_httphost')) {
+            $seed .= "-". (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST']: $_SERVER['SERVER_NAME']);
+        }
+
+        $token = substr(md5($seed), 0, 8);
+
+        return $token;
+    }
+
+    /**
+     * Check if a given token matches the current (correct) Anit-CSRF-like token
+     *
+     * @param string $token
+     * @return bool
+     */
+    function checkAntiCSRFToken($token = "")
+    {
+        global $app;
+
+        if (empty($token)) {
+            $token = $app['request']->get('token');
+        }
+
+        if ($token === $this->getAntiCSRFToken()) {
+            return true;
+        } else {
+            $app['session']->getFlashBag()->set('error', "The security token was incorrect. Please try again.");
+
+            return false;
+        }
+    }
+
 
     public function getActiveSessions()
     {
@@ -347,6 +413,7 @@ class Users
 
         if (empty($user)) {
             $this->session->getFlashBag()->set('error', __('Username or password not correct. Please check your input.'));
+
             return false;
         }
 
@@ -362,7 +429,7 @@ class Users
 
             $update = array(
                 'lastseen' => date('Y-m-d H:i:s'),
-                'lastip' => $_SERVER['REMOTE_ADDR'],
+                'lastip' => $this->remoteIP,
                 'failedlogins' => 0,
                 'throttleduntil' => $this->throttleUntil(0)
             );
@@ -376,14 +443,18 @@ class Users
 
             $user = $this->getUser($user['id']);
 
-            $user['sessionkey'] = $this->getAuthtoken($user['username']);
+            $user['sessionkey'] = $this->getAuthToken($user['username']);
 
+            // We wish to create a new session-id for extended security, but due to a bug in PHP < 5.4.11, this
+            // will throw warnings. Suppress them here. #shakemyhead
+            // @see: https://bugs.php.net/bug.php?id=63379
+            @$this->session->migrate(true);
             $this->session->set('user', $user);
             $this->session->getFlashBag()->set('success', __("You've been logged on successfully."));
 
             $this->currentuser = $user;
 
-            $this->setAuthtoken();
+            $this->setAuthToken();
 
             return true;
 
@@ -428,8 +499,8 @@ class Users
         }
 
         $authtoken = $_COOKIE['bolt_authtoken'];
-        $remoteip = $_SERVER['REMOTE_ADDR'];
-        $browser = getBrowserInfo();
+        $remoteip = $this->remoteIP;
+        $browser = $_SERVER['HTTP_USER_AGENT'];
 
         $this->deleteExpiredSessions();
 
@@ -447,7 +518,7 @@ class Users
             return false;
         }
 
-        $checksalt = $this->getAuthtoken($row['username'], $row['salt']);
+        $checksalt = $this->getAuthToken($row['username'], $row['salt']);
 
         if ($checksalt == $row['token']) {
 
@@ -455,7 +526,7 @@ class Users
 
             $update = array(
                 'lastseen' => date('Y-m-d H:i:s'),
-                'lastip' => $_SERVER['REMOTE_ADDR'],
+                'lastip' => $this->remoteIP,
                 'failedlogins' => 0,
                 'throttleduntil' => $this->throttleUntil(0)
             );
@@ -467,20 +538,28 @@ class Users
                 // Oops. User will get a warning on the dashboard about tables that need to be repaired.
             }
 
-            $user['sessionkey'] = $this->getAuthtoken($user['username']);
+            $user['sessionkey'] = $this->getAuthToken($user['username']);
 
             $this->session->set('user', $user);
             $this->session->getFlashBag()->set('success', __("Session resumed."));
 
             $this->currentuser = $user;
 
-            $this->setAuthtoken();
+            $this->setAuthToken();
 
             return true;
 
         } else {
             // Delete the authtoken cookie..
-            setcookie('bolt_authtoken', '', time() -1 , '/', $this->app['config']->get('general/cookies_domain'));
+            setcookie(
+                'bolt_authtoken',
+                '',
+                time() -1,
+                '/',
+                $this->app['config']->get('general/cookies_domain'),
+                $this->app['config']->get('general/cookies_https_only'),
+                true
+            );
 
             return false;
 
@@ -499,8 +578,8 @@ class Users
 
         if (!empty($user)) {
 
-            $shadowpassword = makeKey(10, true);
-            $shadowtoken = makeKey(32, false);
+            $shadowpassword = $this->app['randomgenerator']->generateString(12);
+            $shadowtoken = $this->app['randomgenerator']->generateString(32);
 
             $hasher = new \Hautelook\Phpass\PasswordHash($this->hash_strength, true);
             $shadowhashed = $hasher->HashPassword($shadowpassword);
@@ -515,13 +594,13 @@ class Users
             // Set the shadow password and related stuff in the database..
             $update = array(
                 'shadowpassword' => $shadowhashed,
-                'shadowtoken' => $shadowtoken . "-" . str_replace(".", "-", $_SERVER['REMOTE_ADDR']),
+                'shadowtoken' => $shadowtoken . "-" . str_replace(".", "-", $this->remoteIP),
                 'shadowvalidity' => date("Y-m-d H:i:s", strtotime("+2 hours"))
             );
             $this->db->update($this->usertable, $update, array('id' => $user['id']));
 
             // Compile the email with the shadow password and reset link..
-            $mailhtml = $this->app['twig']->render('mail/passwordreset.twig', array(
+            $mailhtml = $this->app['render']->render('mail/passwordreset.twig', array(
                 'user' => $user,
                 'shadowpassword' => $shadowpassword,
                 'shadowtoken' => $shadowtoken,
@@ -563,7 +642,7 @@ class Users
     public function resetPasswordConfirm($token)
     {
 
-        $token .= "-" . str_replace(".", "-", $_SERVER['REMOTE_ADDR']);
+        $token .= "-" . str_replace(".", "-", $this->remoteIP);
 
         $now = date("Y-m-d H:i:s");
 
@@ -575,7 +654,7 @@ class Users
         if (!empty($user)) {
 
             // allright, we can reset this user..
-            $this->app['session']->getFlashBag()->set('success', "Password reset successful! You can now log on with the password that was sent to you via email.");
+            $this->app['session']->getFlashBag()->set('success', __("Password reset successful! You can now log on with the password that was sent to you via email."));
 
             $update = array(
                 'password' => $user['shadowpassword'],
@@ -589,7 +668,7 @@ class Users
 
             // That was not a valid token, or too late, or not from the correct IP.
             $this->app['log']->add("Somebody tried to reset a password with an invalid token.", 3, '', 'issue');
-            $this->app['session']->getFlashBag()->set('error', "Password reset not successful! Either the token was incorrect, or you were too late, or you tried to reset the password from a different IP-address.");
+            $this->app['session']->getFlashBag()->set('error', __("Password reset not successful! Either the token was incorrect, or you were too late, or you tried to reset the password from a different IP-address."));
 
 
         }
@@ -613,13 +692,11 @@ class Users
             return "0000-00-00 00:00:00";
         } else {
             $wait = pow(($attempts - 4), 2);
+
             return date("Y-m-d H:i:s", strtotime("+$wait seconds"));
         }
 
     }
-
-
-
 
 
     /**
@@ -630,16 +707,25 @@ class Users
     {
         $this->session->getFlashBag()->set('info', __('You have been logged out.'));
         $this->session->remove('user');
+        @$this->session->migrate(true);
 
         // Remove all auth tokens when logging off a user (so we sign out _all_ this user's sessions on all locations)
-        $this->db->delete($this->authtokentable, array('username' => $this->currentuser['username']));
+        try {
+            $this->db->delete($this->authtokentable, array('username' => $this->currentuser['username']));
+        } catch (\Exception $e) {
+            // Nope. No auth tokens to be deleted. .
+        }
 
         // Remove the cookie..
-        setcookie('bolt_authtoken', '', time() -1 , '/', $this->app['config']->get('general/cookies_domain'));
-
-        // This is commented out for now: shouldn't be necessary, and it also removes the flash notice.
-        // $this->session->invalidate();
-
+        setcookie(
+            'bolt_authtoken',
+            '',
+            time() -1,
+            '/',
+            $this->app['config']->get('general/cookies_domain'),
+            $this->app['config']->get('general/cookies_https_only'),
+            true
+        );
     }
 
     /**
@@ -657,7 +743,6 @@ class Users
             'lastseen' => '',
             'lastip' => '',
             'displayname' => '',
-            'userlevel' => key($this->getUserLevels()),
             'enabled' => '1',
             'shadowpassword' => '',
             'shadowtoken' => '',
@@ -676,17 +761,12 @@ class Users
      */
     public function getUsers()
     {
-
         if (empty($this->users) || !is_array($this->users)) {
 
             $query = "SELECT * FROM " . $this->usertable;
             $this->users = array();
 
             try {
-
-                // get the available contenttypes.
-                $allcontenttypes = array_keys($this->app['config']->get('contenttypes'));
-
                 $tempusers = $this->db->fetchAll($query);
 
                 foreach ($tempusers as $user) {
@@ -694,38 +774,17 @@ class Users
                     $this->users[$key] = $user;
                     $this->users[$key]['password'] = "**dontchange**";
 
-                    // Older Bolt versions didn't store userlevel as int. Assume they're 'Developer', to prevent lockout.
-                    if (in_array($this->users[$key]['userlevel'], array('administrator', 'developer', 'editor'))) {
-                        $this->users[$key]['userlevel'] = self::DEVELOPER;
+                    $roles = json_decode($this->users[$key]['roles']);
+                    if (!is_array($roles)) {
+                        $roles = array();
                     }
-
-                    // Make sure contenttypes is an array.
-                    if (!array_key_exists('contenttypes', $this->users[$key])) {
-                        $this->users[$key]['contenttypes'] = "";
-                    }
-                    $this->users[$key]['contenttypes'] = unserialize($this->users[$key]['contenttypes']);
-                    if (!is_array($this->users[$key]['contenttypes'])) {
-                        $this->users[$key]['contenttypes'] = array();
-                    }
-                    // Intersect, to make sure no old/deleted contenttypes show up.
-                    $this->users[$key]['contenttypes'] = array_intersect($this->users[$key]['contenttypes'], $allcontenttypes);
-
-                    // Developers/admins can access all content
-                    if ($this->users[$key]['userlevel'] > self::EDITOR) {
-                        $this->users[$key]['contenttypes'] = $allcontenttypes;
-                    }
-
-
+                    // add "everyone" role to, uhm, well, everyone.
+                    $roles[] = Permissions::ROLE_EVERYONE;
+                    $this->users[$key]['roles'] = array_unique($roles);
                 }
             } catch (\Exception $e) {
                 // Nope. No users.
             }
-
-            // Extra special case: if there are no users, allow adding one..
-            if (empty($this->users)) {
-                $this->allowed['useredit'] = self::ANONYMOUS;
-            }
-
         }
 
         return $this->users;
@@ -767,7 +826,6 @@ class Users
      */
     public function getCurrentUser()
     {
-
         return $this->currentuser;
 
     }
@@ -779,7 +837,6 @@ class Users
      */
     public function getCurrentUsername()
     {
-
         return $this->currentuser['username'];
 
     }
@@ -787,9 +844,10 @@ class Users
 
     /**
      * Enable or disable a user, specified by id.
-     * @param  int        $id
-     * @param  int        $enabled
-     * @return bool|mixed
+     *
+     * @param  int $id
+     * @param  int $enabled
+     * @return bool
      */
     public function setEnabled($id, $enabled = 1)
     {
@@ -805,57 +863,179 @@ class Users
 
     }
 
-
     /**
-     * get an associative array of the current userlevels.
+     * Check if a certain user has a specific role
      *
-     * Should we move this to a 'constants.yml' file?
-     * @return array
-     */
-    public function getUserLevels()
-    {
-        $userlevels = array(
-            self::EDITOR => "Editor",
-            self::ADMIN => "Administrator",
-            self::DEVELOPER => "Developer"
-        );
-
-        return $userlevels;
-
-    }
-
-    public function isAllowed($what)
-    {
-
-        if (substr($what, 0, 12) == 'contenttype:') {
-            $contenttype = substr($what, 12);
-            $validContenttypes = $this->users[$this->currentuser['username']]['contenttypes'];
-            return (is_array($validContenttypes) && in_array($contenttype, $validContenttypes));
-        }
-
-        if (isset($this->allowed[$what]) && ($this->allowed[$what] > $this->currentuser['userlevel'])) {
-            return false;
-        } else {
-            return true;
-        }
-
-    }
-
-    /**
-     * Check if a certain field with a certain value doesn't exist already. We use
-     * 'makeSlug', because we shouldn't allow 'admin@example.org', when there already
-     * is an 'ADMIN@EXAMPLE.ORG'.
-     *
-     * @param string $fieldname
-     * @param string $value
-     * @param int $currentid
+     * @param mixed $id
+     * @param string $role
      * @return bool
      */
-    public function checkAvailability($fieldname, $value, $currentid=0)
+    public function hasRole($id, $role)
     {
 
+        $user = $this->getUser($id);
+
+        if (empty($user)) {
+            return false;
+        }
+
+        return (is_array($user['roles']) && in_array($role, $user['roles']));
+
+    }
+
+    /**
+     * Add a certain role from a specific user.
+     *
+     * @param mixed $id
+     * @param string $role
+     * @return bool
+     */
+    public function addRole($id, $role)
+    {
+
+        $user = $this->getUser($id);
+
+        if (empty($user) || empty($role)) {
+            return false;
+        }
+
+        // Add the role to the $user['roles'] array
+        $user['roles'][] = (string) $role;
+
+        return $this->saveUser($user);
+
+    }
+
+    /**
+     * Remove a certain role from a specific user.
+     *
+     * @param mixed $id
+     * @param string $role
+     * @return bool
+     */
+    public function removeRole($id, $role)
+    {
+
+        $user = $this->getUser($id);
+
+        if (empty($user) || empty($role)) {
+            return false;
+        }
+
+        // Remove the role from the $user['roles'] array.
+        $user['roles'] = array_diff($user['roles'], array((string) $role));
+
+        return $this->saveUser($user);
+
+    }
+
+    /**
+     * Check for a user with the 'root' role. There should always be at least one
+     * If there isn't we promote the current user.
+     *
+     * @return bool
+     */
+    public function checkForRoot()
+    {
+
+        // Don't check for root, if we're not logged in.
+        if ($this->getCurrentUsername() == false) {
+            return false;
+        }
+
+        // Loop over the users, check if anybody's root.
+        foreach ($this->getUsers() as $user) {
+            if (is_array($user['roles']) && in_array('root', $user['roles'])) {
+                // We have a 'root' user.
+                return true;
+            }
+        }
+
+        // Make sure the DB is updated. Note, that at this point we currently don't have
+        // the permissions to do so, but if we don't, update the DB, we can never add the
+        // role 'root' to the current user.
+        $this->app['integritychecker']->repairTables();
+
+        // If we reach this point, there is no user 'root'. We promote the current user.
+        $this->addRole($this->getCurrentUsername(), 'root');
+
+        // Show a helpful message to the user.
+        $this->app['session']->getFlashBag()->set('info', __("There should always be at least one 'root' user. You have just been promoted. Congratulations!"));
+
+    }
+
+    /**
+     * Runs a permission check. Permissions are encoded as strings, where
+     * the ':' character acts as a separator for dynamic parts and
+     * sub-permissions.
+     * Apart from the route-based rules defined in permissions.yml, the
+     * following special cases are available:
+     *
+     * "overview:$contenttype" - view the overview for the content type. Alias
+     *                           for "contenttype:$contenttype:view".
+     * "contenttype:$contenttype",
+     * "contenttype:$contenttype:view",
+     * "contenttype:$contenttype:view:$id" - View any item or a particular item
+     *                                       of the specified content type.
+     * "contenttype:$contenttype:edit",
+     * "contenttype:$contenttype:edit:$id" - Edit any item or a particular item
+     *                                       of the specified content type.
+     * "contenttype:$contenttype:create" - Create a new item of the specified
+     *                                     content type. (It doesn't make sense
+     *                                     to provide this permission on a
+     *                                     per-item basis, for obvious reasons)
+     * "contenttype:$contenttype:change-ownership",
+     * "contenttype:$contenttype:change-ownership:$id" - Change the ownership
+     *                                of the specified content type or item.
+     *
+     * @param string $what The desired permission, as elaborated upon above.
+     * @return bool TRUE if the permission is granted, FALSE if denied.
+     */
+    public function isAllowed($what)
+    {
+        $user = $this->currentuser;
+
+        return $this->app['permissions']->isAllowed($what, $user);
+    }
+
+    public function isContentStatusTransitionAllowed($fromStatus, $toStatus, $contenttype, $contentid = null)
+    {
+        $user = $this->currentuser;
+
+        return $this->app['permissions']->isContentStatusTransitionAllowed($fromStatus, $toStatus, $user, $contenttype, $contentid);
+    }
+
+    private function canonicalizeFieldValue($fieldname, $fieldvalue)
+    {
+        switch ($fieldname) {
+            case 'email':
+                return strtolower(trim($fieldvalue));
+
+            case 'username':
+                return strtolower(preg_replace('/[^a-zA-Z0-9_\\-]/', '', $fieldvalue));
+
+            default:
+                return trim($fieldvalue);
+        }
+    }
+
+    /**
+     * Check if a certain field with a certain value doesn't exist already.
+     * Depending on the field type, different pre-massaging of the compared
+     * values are applied, because what constitutes 'equal' for the purpose
+     * of this filtering depends on the field type.
+     *
+     * @param  string $fieldname
+     * @param  string $value
+     * @param  int    $currentid
+     * @return bool
+     */
+    public function checkAvailability($fieldname, $value, $currentid = 0)
+    {
         foreach ($this->users as $user) {
-            if ((makeSlug($user[$fieldname]) == makeSlug($value)) && ($user['id'] != $currentid)) {
+            if (($this->canonicalizeFieldValue($fieldname, $user[$fieldname]) ===
+                 $this->canonicalizeFieldValue($fieldname, $value)) &&
+                ($user['id'] != $currentid)) {
                 return false;
             }
         }

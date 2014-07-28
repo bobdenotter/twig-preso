@@ -1,6 +1,6 @@
 <?php
 
-Namespace Bolt\Controllers;
+namespace Bolt\Controllers;
 
 use Guzzle\Http\Exception\RequestException;
 use Silex;
@@ -16,65 +16,75 @@ class Async implements ControllerProviderInterface
 
         $ctr->get("/dashboardnews", array($this, 'dashboardnews'))
             ->before(array($this, 'before'))
-            ->bind('dashboardnews')
-        ;
+            ->bind('dashboardnews');
 
         $ctr->get("/latestactivity", array($this, 'latestactivity'))
             ->before(array($this, 'before'))
-            ->bind('latestactivity')
-        ;
+            ->bind('latestactivity');
 
         $ctr->get("/filesautocomplete", array($this, 'filesautocomplete'))
-            ->before(array($this, 'before'))
-        ;
+            ->before(array($this, 'before'));
 
         $ctr->get("/readme/{extension}", array($this, 'readme'))
             ->before(array($this, 'before'))
-            ->bind('readme')
-        ;
+            ->bind('readme');
 
         $ctr->get("/widget/{key}", array($this, 'widget'))
             ->before(array($this, 'before'))
-            ->bind('widget')
-        ;
+            ->bind('widget');
 
         $ctr->post("/markdownify", array($this, 'markdownify'))
             ->before(array($this, 'before'))
-            ->bind('markdownify')
-        ;
+            ->bind('markdownify');
 
         $ctr->get("/makeuri", array($this, 'makeuri'))
-            ->before(array($this, 'before'))
-        ;
+            ->before(array($this, 'before'));
 
-        $ctr->get("/lastmodified/{contenttypeslug}", array($this, 'lastmodified'))
+        $ctr->get("/lastmodified/{contenttypeslug}/{contentid}", array($this, 'lastmodified'))
+            ->value('contentid', '')
             ->before(array($this, 'before'))
-            ->bind('lastmodified')
-        ;
+            ->bind('lastmodified');
 
         $ctr->get("/filebrowser/{contenttype}", array($this, 'filebrowser'))
             ->before(array($this, 'before'))
             ->assert('contenttype', '.*')
-            ->bind('contenttype')
-        ;
-
+            ->bind('contenttype');
 
         $ctr->get("/browse/{path}", array($this, 'browse'))
             ->before(array($this, 'before'))
             ->assert('path', '.+')
-            ->bind('asyncbrowse')
-        ;
+            ->bind('asyncbrowse');
 
+        $ctr->post("/deletefile", array($this, 'deletefile'))
+            ->before(array($this, 'before'))
+            ->bind('deletefile');
 
+        $ctr->get("/addstack/{filename}", array($this, 'addstack'))
+            ->before(array($this, 'before'))
+            ->assert('filename', '.*')
+            ->bind('addstack');
+
+        $ctr->get("/tags/{taxonomytype}", array($this, 'tags'))
+            ->before(array($this, 'before'))
+            ->bind('tags');
+
+        $ctr->get("/populartags/{taxonomytype}", array($this, 'populartags'))
+            ->before(array($this, 'before'))
+            ->bind('populartags');
+
+        $ctr->get("/showstack", array($this, 'showstack'))
+            ->before(array($this, 'before'))
+            ->bind('showstack');
 
         return $ctr;
 
     }
+
     /**
      * News.
      */
-    function dashboardnews(Silex\Application $app) {
-
+    public function dashboardnews(Silex\Application $app)
+    {
         $news = $app['cache']->fetch('dashboardnews'); // Two hours.
 
         $name = !empty($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : $_SERVER['HTTP_HOST'];
@@ -86,7 +96,8 @@ class Async implements ControllerProviderInterface
 
             $driver = $app['config']->get('general/database/driver', 'sqlite');
 
-            $url = sprintf('http://news.bolt.cm/?v=%s&p=%s&db=%s&name=%s',
+            $url = sprintf(
+                'http://news.bolt.cm/?v=%s&p=%s&db=%s&name=%s',
                 rawurlencode($app->getVersion()),
                 phpversion(),
                 $driver,
@@ -114,15 +125,15 @@ class Async implements ControllerProviderInterface
                     $app['log']->add("News: got invalid JSON feed", 1);
                 }
 
-            } catch(RequestException $re) {
-                $app['log']->add("News: got exception: ".$re->getMessage(), 1);
+            } catch (RequestException $re) {
+                $app['log']->add("News: got exception: " . $re->getMessage(), 1);
             }
 
         } else {
             $app['log']->add("News: get from cache..", 1);
         }
 
-        $body = $app['twig']->render('dashboard-news.twig', array('news' => $news ));
+        $body = $app['render']->render('dashboard-news.twig', array('news' => $news));
 
         return new Response($body, 200, array('Cache-Control' => 's-maxage=3600, public'));
 
@@ -131,25 +142,23 @@ class Async implements ControllerProviderInterface
     /**
      * Get the 'latest activity' for the dashboard..
      */
-    function latestactivity(Silex\Application $app) {
-
+    public function latestactivity(Silex\Application $app)
+    {
         $activity = $app['log']->getActivity(8, 3);
 
-        $body = $app['twig']->render('dashboard-activity.twig', array('activity' => $activity));
+        $body = $app['render']->render('dashboard-activity.twig', array('activity' => $activity));
 
         return new Response($body, 200, array('Cache-Control' => 's-maxage=3600, public'));
 
     }
 
-    function filesautocomplete(Silex\Application $app, Request $request) {
-
+    public function filesautocomplete(Silex\Application $app, Request $request)
+    {
         $term = $request->get('term');
 
-        $ext = $request->query->get('ext');
-        if (empty($ext)) {
+        $extensions = $request->query->get('ext');
+        if (empty($extensions)) {
             $extensions = 'jpg,jpeg,gif,png';
-        } else {
-            $extensions = $request->query->get('extensions');
         }
 
         $files = findFiles($term, $extensions);
@@ -164,40 +173,39 @@ class Async implements ControllerProviderInterface
      * Render a widget, and return the HTML, so it can be inserted in the page.
      *
      */
-    function widget($key, Silex\Application $app, Request $request) {
-
+    public function widget($key, Silex\Application $app, Request $request)
+    {
         $html = $app['extensions']->renderWidget($key);
 
         return new Response($html, 200, array('Cache-Control' => 's-maxage=180, public'));
 
     }
 
-    function readme($extension, Silex\Application $app, Request $request) {
-
-        $filename = __DIR__."/../../../extensions/".$extension."/readme.md";
+    public function readme($extension, Silex\Application $app, Request $request)
+    {
+        $filename = __DIR__ . "/../../../extensions/" . $extension . "/readme.md";
 
         //echo "<pre>\n" . \util::var_dump($filename, true) . "</pre>\n";
 
         $readme = file_get_contents($filename);
 
         // Parse the field as Markdown, return HTML
-        $markdownParser = new \dflydev\markdown\MarkdownParser();
-        $html = $markdownParser->transformMarkdown($readme);
+        $html = \Parsedown::instance()->parse($readme);
 
         return new Response($html, 200, array('Cache-Control' => 's-maxage=180, public'));
 
     }
 
-    function markdownify(Silex\Application $app, Request $request) {
-
+    public function markdownify(Silex\Application $app, Request $request)
+    {
         $html = $request->request->get('html');
 
         if (isHtml($html)) {
 
-            require_once(__DIR__.'/../../../classes/markdownify/markdownify_extra.php');
-            $md = new \Markdownify(false, 80, false);
+            require_once(__DIR__ . '/../../../classes/markdownify/markdownify_extra.php');
+            $markdown = new \Markdownify(false, 80, false);
 
-            $output = $md->parseString($html);
+            $output = $markdown->parseString($html);
 
         } else {
             $output = $html;
@@ -207,47 +215,119 @@ class Async implements ControllerProviderInterface
 
     }
 
-    function makeuri(Silex\Application $app, Request $request) {
-
+    public function makeuri(Silex\Application $app, Request $request)
+    {
         $uri = $app['storage']->getUri($request->query->get('title'), $request->query->get('id'), $request->query->get('contenttypeslug'), $request->query->get('fulluri'));
 
         return $uri;
+    }
 
+
+    public function tags(Silex\Application $app, $taxonomytype)
+    {
+        $prefix = $app['config']->get('general/database/prefix', "bolt_");
+
+        // \util::var_dump($taxonomytype);
+        $query = "select distinct `%staxonomy`.`slug` from `%staxonomy` where `taxonomytype` = ? order by `slug` asc;";
+        $query = sprintf($query, $prefix, $prefix);
+        $query = $app['db']->executeQuery($query, array($taxonomytype));
+
+        $results = $query->fetchAll();
+        return $app->json($results);
+    }
+
+    public function populartags(Silex\Application $app, $taxonomytype)
+    {
+        $prefix = $app['config']->get('general/database/prefix', "bolt_");
+
+        $limit = $app['request']->get('limit', 20);
+
+        $query = "select `slug` , count(`slug`) as `count` from  `%staxonomy` where `taxonomytype` = ? group by  `slug` order by `count` desc limit %s";
+        $query = sprintf($query, $prefix, intval($limit));
+        $query = $app['db']->executeQuery($query, array($taxonomytype));
+
+
+        $results = $query->fetchAll();
+
+        usort($results, function ($a, $b) {
+
+            if ($a['slug'] == $b['slug']) {
+                return 0;
+            }
+            return ($a['slug'] < $b['slug']) ? -1 : 1;
+
+        });
+
+
+        return $app->json($results);
     }
 
 
     /**
      * Latest {contenttype} to show a small listing in the sidebars..
      */
-    function lastmodified(Silex\Application $app, $contenttypeslug) {
+    public function lastmodified(Silex\Application $app, $contenttypeslug, $contentid = null)
+    {
+        // Let's find out how we should determine what the latest changes were:
+        $contentLogEnabled = (bool)$app['config']->get('general/changelog/enabled');
 
+        if ($contentLogEnabled) {
+            return $this->lastmodifiedByContentLog($app, $contenttypeslug, $contentid);
+        } else {
+            return $this->lastmodifiedSimple($app, $contenttypeslug);
+        }
+    }
+
+    private function lastmodifiedSimple(Silex\Application $app, $contenttypeslug)
+    {
         // Get the proper contenttype..
         $contenttype = $app['storage']->getContentType($contenttypeslug);
 
         // get the 'latest' from the requested contenttype.
         $latest = $app['storage']->getContent($contenttype['slug'], array('limit' => 5, 'order' => 'datechanged DESC'));
 
-        $body = $app['twig']->render('_sub_lastmodified.twig', array('latest' => $latest, 'contenttype' => $contenttype ));
-
+        $body = $app['render']->render('_sub_lastmodified.twig', array('latest' => $latest, 'contenttype' => $contenttype));
         return new Response($body, 200, array('Cache-Control' => 's-maxage=60, public'));
+    }
 
+    private function lastmodifiedByContentLog(Silex\Application $app, $contenttypeslug, $contentid)
+    {
+        // Get the proper contenttype..
+        $contenttype = $app['storage']->getContentType($contenttypeslug);
+
+        // get the changelog for the requested contenttype.
+        $options = array('limit' => 5, 'order' => 'date DESC');
+        if (intval($contentid) == 0) {
+            $isFiltered = false;
+        } else {
+            $isFiltered = true;
+            $options['contentid'] = intval($contentid);
+        }
+        $changelog = $app['storage']->getChangelogByContentType($contenttype['slug'], $options);
+
+        $renderVars = array(
+            'changelog' => $changelog,
+            'contenttype' => $contenttype,
+            'contentid' => $contentid,
+            'filtered' => $isFiltered,
+            );
+        $body = $app['render']->render('_sub_lastmodified.twig', $renderVars);
+        return new Response($body, 200, array('Cache-Control' => 's-maxage=60, public'));
     }
 
     /**
      * List pages in given contenttype, to easily insert links through the Wysywig editor.
      *
-     * @param string $contenttype
-     * @param Silex\Application $app
-     * @param Request $request
+     * @param  string            $contenttype
+     * @param  Silex\Application $app
+     * @param  Request           $request
      * @return mixed
      */
-    function filebrowser($contenttype = 'pages', Silex\Application $app, Request $request) {
-
-        $contenttypes = $app['storage']->getContentTypes();
-
+    public function filebrowser($contenttype = 'pages', Silex\Application $app, Request $request)
+    {
         foreach ($app['storage']->getContentTypes() as $contenttype) {
 
-            $records = $app['storage']->getContent($contenttype, array('published'=>true));
+            $records = $app['storage']->getContent($contenttype, array('published' => true));
 
             foreach ($records as $key => $record) {
                 $results[$contenttype][] = array(
@@ -256,11 +336,9 @@ class Async implements ControllerProviderInterface
                     'link' => $record->link(),
                 );
             }
-
         }
 
-
-        return $app['twig']->render('filebrowser.twig', array(
+        return $app['render']->render('filebrowser.twig', array(
             'results' => $results
         ));
 
@@ -271,18 +349,22 @@ class Async implements ControllerProviderInterface
      * List browse on the server, so we can insert them in the file input.
      *
      * @param $path
-     * @param Silex\Application $app
-     * @param Request $request
+     * @param  Silex\Application $app
+     * @param  Request           $request
      * @return mixed
      */
-    function browse($path, Silex\Application $app, Request $request) {
-
+    public function browse($path, Silex\Application $app, Request $request)
+    {
         $files = array();
         $folders = array();
 
-        $basefolder = __DIR__."/../../../../";
+        // $key is linked to the fieldname of the original field, so we can
+        // Set the selected value in the proper field
+        $key = $app['request']->get('key');
+
+        $basefolder = BOLT_WEB_DIR . '/';
         $path = stripTrailingSlash(str_replace("..", "", $path));
-        $currentfolder = realpath($basefolder.$path);
+        $currentfolder = realpath($basefolder . $path);
 
         $ignored = array(".", "..", ".DS_Store", ".gitignore", ".htaccess");
 
@@ -292,7 +374,7 @@ class Async implements ControllerProviderInterface
         if (!empty($path)) {
             foreach (explode("/", $path) as $segment) {
                 $cumulative .= $segment . "/";
-                $pathsegments[ $cumulative ] = $segment;
+                $pathsegments[$cumulative] = $segment;
             }
         }
 
@@ -302,9 +384,11 @@ class Async implements ControllerProviderInterface
 
             while (false !== ($entry = $d->read())) {
 
-                if (in_array($entry, $ignored)) { continue; }
+                if (in_array($entry, $ignored)) {
+                    continue;
+                }
 
-                $fullfilename = $currentfolder."/".$entry;
+                $fullfilename = $currentfolder . "/" . $entry;
 
                 if (is_file($fullfilename)) {
                     $relativepath = str_replace("files/", "", ($path . "/" . $entry));
@@ -342,20 +426,75 @@ class Async implements ControllerProviderInterface
             $d->close();
 
         } else {
-            $app['session']->getFlashBag()->set('error', __("Folder '%s' could not be found, or is not readable.", array('%s'=>$path)));
+            $app['session']->getFlashBag()->set('error', __("Folder '%s' could not be found, or is not readable.", array('%s' => $path)));
         }
 
-        $app['twig']->addGlobal('title', __("Files in %s", array('%s' =>$path)));
+        $app['twig']->addGlobal('title', __("Files in %s", array('%s' => $path)));
 
         // Make sure the files and folders are sorted properly.
         ksort($files);
         ksort($folders);
 
-        return $app['twig']->render('files_async.twig', array(
+        return $app['render']->render('files_async.twig', array(
             'path' => $path,
             'files' => $files,
             'folders' => $folders,
-            'pathsegments' => $pathsegments
+            'pathsegments' => $pathsegments,
+            'key' => $key
+        ));
+
+    }
+
+
+     /**
+     * Delete a file on the server.
+     *
+     * @param  Silex\Application $app
+     * @param  Request           $request
+     * @return bool
+     */
+    public function deletefile(Silex\Application $app, Request $request)
+    {
+        $filename = $request->request->get('filename');
+
+        $filePath = BOLT_WEB_DIR . '/' . $filename;
+
+        // TODO: ensure that we are deleting a file inside /files folder
+
+        if (is_file($filePath) && is_readable($filePath)) {
+            @unlink($filePath);
+            return true;
+        } else {
+            return false;
+        }
+
+    }
+
+    public function addstack($filename = "", Silex\Application $app)
+    {
+
+        // \util::var_dump($filename);
+
+        $app['stack']->add($filename);
+
+        return true;
+
+    }
+
+
+
+    public function showstack(Silex\Application $app)
+    {
+
+        $count = $app['request']->get('items', 10);
+        $options = $app['request']->get('options', false);
+
+        $stack = $app['stack']->listitems($count);
+
+        return $app['render']->render('_sub_stack.twig', array(
+            'stack' => $stack,
+            'options' => $options,
+            'filetypes' => $app['stack']->getFileTypes()
         ));
 
     }
@@ -366,7 +505,10 @@ class Async implements ControllerProviderInterface
      * Middleware function to do some tasks that should be done for all aynchronous
      * requests.
      */
-    function before(Request $request, Silex\Application $app) {
+    public function before(Request $request, Silex\Application $app)
+    {
+        // Start the 'stopwatch' for the profiler.
+        $app['stopwatch']->start('bolt.async.before');
 
         // Only set which endpoint it is, if it's not already set. Which it is, in cases like
         // when it's embedded on a page using {{ render() }}
@@ -380,7 +522,8 @@ class Async implements ControllerProviderInterface
             $app->abort(404, "You must be logged in to use this.");
         }
 
+        // Stop the 'stopwatch' for the profiler.
+        $app['stopwatch']->stop('bolt.async.before');
+
     }
-
-
 }

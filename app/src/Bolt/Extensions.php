@@ -5,6 +5,7 @@ namespace Bolt;
 use Bolt;
 use util;
 use Bolt\Extensions\Snippets\Location as SnippetLocation;
+use Bolt\Extensions\BaseExtensionInterface;
 
 class Extensions
 {
@@ -104,15 +105,16 @@ class Extensions
         // No activated extensions, nothing to do here.
         if (!is_array($list)) {
             $this->enabled = array();
+
             return;
         }
 
         $folders = array();
 
-        $d = dir($this->basefolder);
+        $dir = dir($this->basefolder);
 
         // Make a list of extensions, actually present..
-        while (false !== ($foldername = $d->read())) {
+        while (false !== ($foldername = $dir->read())) {
 
             if (in_array($foldername, $this->ignored) || substr($foldername, 0, 2) == "._") {
                 continue;
@@ -124,7 +126,7 @@ class Extensions
 
         }
 
-        $d->close();
+        $dir->close();
 
         $this->enabled = array_intersect($list, $folders);
 
@@ -139,11 +141,11 @@ class Extensions
     public function getInfo()
     {
 
-        $d = dir($this->basefolder);
+        $dir = dir($this->basefolder);
 
         $info = array();
 
-        while (false !== ($entry = $d->read())) {
+        while (false !== ($entry = $dir->read())) {
 
             if (in_array($entry, $this->ignored) || substr($entry, 0, 2) == "._") {
                 continue;
@@ -154,7 +156,7 @@ class Extensions
             }
 
         }
-        $d->close();
+        $dir->close();
 
         ksort($info);
 
@@ -176,6 +178,7 @@ class Extensions
         if (!is_readable($filename)) {
             // No extension.php in the folder, skip it!
             $this->app['log']->add("Couldn't initialize $namespace: 'extension.php' doesn't exist", 3);
+
             return array();
         }
 
@@ -184,6 +187,7 @@ class Extensions
         if (!class_exists($namespace . '\Extension')) {
             // No class Extensionname\Extension, skip it!
             $this->app['log']->add("Couldn't initialize $namespace: Class '$namespace\\Extension' doesn't exist", 3);
+
             return array();
         }
 
@@ -198,11 +202,9 @@ class Extensions
         $info['enabled'] = $this->isEnabled($namespace);
 
         // \util::var_dump($info);
-
         return $info;
 
     }
-
 
     /**
      * Check if an extension is enabled, case sensitive.
@@ -215,42 +217,46 @@ class Extensions
         return in_array($name, $this->enabled);
     }
 
-
     /**
      * Initialize the enabled extensions.
      *
      */
     public function initialize()
     {
-        foreach ($this->enabled as $extension) {
-            $filename = $this->basefolder . "/" . $extension . "/extension.php";
+        foreach ($this->enabled as $extensionKey) {
+            $filename = $this->basefolder . "/" . $extensionKey . "/extension.php";
 
             if (is_readable($filename)) {
                 include_once($filename);
 
-                $classname = '\\' . $extension . '\\Extension';
+                $classname = '\\' . $extensionKey . '\\Extension';
 
                 if (!class_exists($classname)) {
-                    $this->app['log']->add("Couldn't initialize $extension: Class '$classname' doesn't exist", 3);
+                    $this->app['log']->add("Couldn't initialize $extensionKey: Class '$classname' doesn't exist", 3);
+
                     return;
                 }
 
-                $this->initialized[$extension] = new $classname($this->app);
+                $extension = new $classname($this->app);
+                $this->initialized[$extensionKey] = $extension;
 
-                if ($this->initialized[$extension] instanceof \Bolt\BaseExtensionInterface) {
+                if ($extension instanceof BaseExtensionInterface) {
+                    $extension->getConfig();
+                    $extension->initialize();
 
-                    $this->initialized[$extension]->getConfig();
-                    $this->initialized[$extension]->initialize();
+                    // Check if (instead, or on top of) initialize, the extension has a 'getSnippets' method
+                    $this->getSnippets($extensionKey);
 
-                    if ($this->initialized[$extension] instanceof \Twig_Extension) {
-                        $this->app['twig']->addExtension($this->initialized[$extension]);
+                    if ($extension instanceof \Twig_Extension) {
+                        $info = $extension->info();
+                        $this->app['twig']->addExtension($extension);
+                        if (!empty($info['allow_in_user_content'])) {
+                            $this->app['safe_twig']->addExtension($extension);
+                        }
                     }
                 }
             }
-
-
         }
-
     }
 
     /**
@@ -274,13 +280,18 @@ class Extensions
      * other css files.
      *
      * @param string $filename
+     * @param bool $late
      */
-    public function addCss($filename)
+    public function addCss($filename, $late = false)
     {
 
         $html = sprintf('<link rel="stylesheet" href="%s" media="screen">', $filename);
 
-        $this->insertSnippet(SnippetLocation::BEFORE_CSS, $html);
+        if ($late) {
+            $this->insertSnippet(SnippetLocation::END_OF_BODY, $html);
+        } else {
+            $this->insertSnippet(SnippetLocation::BEFORE_CSS, $html);
+        }
 
     }
 
@@ -288,13 +299,18 @@ class Extensions
      * Add a particular javascript file to the output. This will be inserted after
      * the other javascript files.
      * @param string $filename
+     * @param bool $late
      */
-    public function addJavascript($filename)
+    public function addJavascript($filename, $late = false)
     {
 
         $html = sprintf('<script src="%s"></script>', $filename);
 
-        $this->insertSnippet(SnippetLocation::AFTER_JS, $html);
+        if ($late) {
+            $this->insertSnippet(SnippetLocation::END_OF_BODY, $html);
+        } else {
+            $this->insertSnippet(SnippetLocation::AFTER_JS, $html);
+        }
 
     }
 
@@ -309,7 +325,7 @@ class Extensions
 
         $sessionkey = !empty($user['sessionkey']) ? $user['sessionkey'] : "";
 
-        $key = substr(md5(sprintf("%s%s%s%s", $sessionkey, $type, $location, $callback)), 0, 8);
+        $key = substr(md5(sprintf("%s%s%s%s", $sessionkey, $type, $location, !is_array($callback) ? $callback : get_class($callback[0]) . $callback[1])), 0, 8);
 
         $this->widgetqueue[] = array(
             'type' => $type,
@@ -339,11 +355,12 @@ class Extensions
                 if ($type == $widget['type'] && $location == $widget['location']) {
 
                     $html = sprintf(
-                        "<section><div class='widget' id='widget-%s' data-key='%s'>%s</div>%s</section>"
-                        , $widget['key']
-                        , $widget['key']
-                        , $this->renderWidget( $widget['key'] )
-                        , empty( $widget['additionalhtml'] ) ? '' : "\n" . $widget['additionalhtml']
+                        "<section><div class='widget' id='widget-%s' data-key='%s'%s>%s</div>%s</section>",
+                        $widget['key'],
+                        $widget['key'],
+                        !$widget['defer'] ? '' : " data-defer='true'",
+                        $widget['defer'] ? '' : $this->renderWidget($widget['key']),
+                        empty($widget['additionalhtml']) ? '' : "\n" . $widget['additionalhtml']
                     );
 
                     echo $html;
@@ -355,7 +372,7 @@ class Extensions
     /**
      * Renders the widget identified by the given key.
      *
-     * @param string $key Widget identifier
+     * @param  string $key Widget identifier
      * @return string HTML
      */
     public function renderWidget($key)
@@ -369,11 +386,11 @@ class Extensions
                 if ($this->app['cache']->contains($cachekey)) {
                     // Present in the cache ..
                     $html = $this->app['cache']->fetch($cachekey);
-                } else if (is_string($widget['callback']) && method_exists($this->initialized[$widget['extension']], $widget['callback'])) {
+                } elseif (is_string($widget['callback']) && method_exists($this->initialized[$widget['extension']], $widget['callback'])) {
                     // Widget is defined in the extension itself.
                     $html = $this->initialized[$widget['extension']]->parseWidget($widget['callback'], $widget['extraparameters']);
                     $this->app['cache']->save($cachekey, $html, $widget['cacheduration']);
-                } else if (is_callable($widget['callback'])) {
+                } elseif (is_callable($widget['callback'])) {
                     // Widget is a callback in the 'global scope'
                     $html = call_user_func($widget['callback'], $this->app, $widget['extraparameters']);
                     $this->app['cache']->save($cachekey, $html, $widget['cacheduration']);
@@ -456,7 +473,7 @@ class Extensions
             if (($item['extension'] != "core") && method_exists($this->initialized[$item['extension']], $item['callback'])) {
                 // Snippet is defined in the extension itself.
                 $snippet = $this->initialized[$item['extension']]->parseSnippet($item['callback'], $item['extraparameters']);
-            } else if (function_exists($item['callback'])) {
+            } elseif (function_exists($item['callback'])) {
                 // Snippet is a callback in the 'global scope'
                 $snippet = call_user_func($item['callback'], $this->app, $item['extraparameters']);
             } else {
@@ -512,11 +529,9 @@ class Extensions
             $html = preg_replace(array_keys($this->matchedcomments), $this->matchedcomments, $html, 1);
         }
 
-
         return $html;
 
     }
-
 
     /**
      *
@@ -642,7 +657,6 @@ class Extensions
 
     }
 
-
     /**
      * Helper function to insert some HTML into the html section of an HTML
      * page, right before the </html> tag.
@@ -761,7 +775,6 @@ class Extensions
 
     }
 
-
     /**
      * Helper function to insert some HTML before the first javascript include in the page.
      *
@@ -798,6 +811,7 @@ class Extensions
      *
      * @param  string $tag
      * @param  string $html
+     * @param bool $insidehead
      * @return string
      */
     public function insertAfterJs($tag, $html, $insidehead = true)
@@ -812,13 +826,13 @@ class Extensions
         }
 
         // then, attempt to insert it after the last <script> tag within context, matching indentation..
-        if (preg_match_all("~^([ \t]*)<script (.*)~mi", $context, $matches)) {
+        if (preg_match_all("~</script>~mi", $context, $matches)) {
             // matches[0] has some elements, the last index is -1, because zero indexed.
             $last = count($matches[0]) - 1;
             $replacement = sprintf("%s\n%s%s", $matches[0][$last], $matches[1][$last], $tag);
             $html = str_replace_first($matches[0][$last], $replacement, $html);
 
-        } else if ($insidehead) {
+        } elseif ($insidehead) {
             // Second attempt: entire document
             $html = $this->insertAfterJs($tag, $html, false);
         } else {
@@ -833,7 +847,7 @@ class Extensions
     /**
      * Insert jQuery, if it's not inserted already.
      *
-     * @param string $html
+     * @param  string $html
      * @return string HTML
      */
     private function insertJquery($html)
@@ -849,6 +863,7 @@ class Extensions
         if (!preg_match('/<script(.*)jquery(-latest|-[0-9\.]*)?(\.min)?\.js/', $html)) {
             $jqueryfile = $this->app['paths']['app'] . "view/js/jquery-1.10.2.min.js";
             $html = $this->insertBeforeJs("<script src='$jqueryfile'></script>", $html);
+
             return $html;
         } else {
             // We've already got jQuery. Yay, us!
@@ -858,30 +873,30 @@ class Extensions
 
 
     /**
-     * Add a menu-option to the 'settings' menu. Note that the item is only added if the current user
-     * has a sufficient high enough userlevel
+     * Add a menu option to the 'settings' menu. Note that the item is only added if the current user
+     * meets the required permission.
      *
      * @see \Bolt\BaseExtension\addMenuOption()
      *
      * @param string $label
      * @param string $path
      * @param bool $icon
-     * @param int $userlevel
+     * @param string $requiredPermission (NULL if no permission is required)
      */
-    public function addMenuOption($label, $path, $icon = false, $userlevel = 2)
+    public function addMenuOption($label, $path, $icon = false, $requiredPermission = null)
     {
+        // Fix the path, if we have not given a full path..
+        if (strpos($path, '/') === false) {
+            $path = $this->app['paths']['bolt'] . $path;
+        }
 
-        if ($this->app['users']->currentuser['userlevel'] >= $userlevel) {
-
+        if (empty($requiredPermission) || $this->app['users']->isAllowed($requiredPermission)) {
             $this->menuoptions[$path] = array(
                 'label' => $label,
                 'path' => $path,
-                'icon' => $icon,
-                'userlevel' => $userlevel
+                'icon' => $icon
             );
-
         }
-
     }
 
     /**
@@ -909,7 +924,7 @@ class Extensions
      * array. These will be put back after the replacements on the HTML are
      * finished.
      *
-     * @param string $c
+     * @param  string $c
      * @return string The key under which the comment is stored
      */
     private function pregcallback($c)
@@ -917,8 +932,8 @@ class Extensions
         $key = "###bolt-comment-" . count($this->matchedcomments) . "###";
         // Add it to the array of matched comments..
         $this->matchedcomments["/" . $key . "/"] = $c[0];
+
         return $key;
 
     }
-
 }

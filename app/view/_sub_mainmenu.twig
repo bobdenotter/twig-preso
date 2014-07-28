@@ -17,8 +17,10 @@
                             <li><a href="{{ path('overview', { 'contenttypeslug': slug }) }}">
                                 <i class="icon-tasks"></i> {{ __('View %contenttypes%', {'%contenttypes%': contenttype.name}) }}</a></li>
                             {% if loop.length < 5 %}
-                            <li><a href="{{ path('editcontent', { 'contenttypeslug': slug, 'id': '' }) }}">
-                                <i class="icon-plus"></i> {{ __('New %contenttype%',{'%contenttype%': contenttype.singular_name}) }}</a></li>
+                                {% if isallowed('contenttype:' ~ slug ~ ':create') %}
+                                <li><a href="{{ path('editcontent', { 'contenttypeslug': slug, 'id': '' }) }}">
+                                    <i class="icon-plus"></i> {{ __('New %contenttype%',{'%contenttype%': contenttype.singular_name}) }}</a></li>
+                                {% endif %}
                                 {% if not loop.last %}<li class="divider"></li>{% endif %}
                             {% endif %}
                         {% endif %}
@@ -28,25 +30,46 @@
             </li>
 
             {# Menu with all settings #}
-            {% if isallowed('settings') %}
+            {% set checkpermissions = [
+                        'settings',
+                        'files:config',
+                        'extensions',
+                        'dbupdate',
+                        'clearcache',
+                        'users',
+                        'activitylog',
+                        'files:theme',
+                        'files:uploads',
+                        'translation' ] %}
+            {% set granted = false %}
+            {% for checkpermission in checkpermissions %}
+                {% if isallowed(checkpermission) %}
+                    {% set granted = true %}
+                {% endif %}
+            {% endfor %}
+            {% if granted %}
             <li class="{% if active=='settings' %}active {% endif %}dropdown">
                 <a href="#" class="dropdown-toggle" data-toggle="dropdown"><i class="icon-cogs"></i> {{ __('Settings') }}
                     <b class="caret"></b>
                 </a>
                 <ul class="dropdown-menu">
-                    {% if isallowed('files:config') %}
+                    {% if isallowed('users') or isallowed('files:config') %}
                         <li class="nav-header">{{ __('Configuration') }}</li>
-                        <li><a href="{{ path('users') }}"><i class="icon-group"></i> {{ __('Users') }}</a></li>
-                        <li><a href="{{ path('fileedit', { 'file': 'app/config/config.yml'}) }}">
-                            <i class="icon-cog"></i> {{ __('Configuration') }}</a></li>
-                        <li><a href="{{ path('fileedit', { 'file': 'app/config/contenttypes.yml'}) }}">
-                            <i class="icon-hdd"></i> {{ __('Contenttypes') }}</a></li>
-                        <li><a href="{{ path('fileedit', { 'file': 'app/config/taxonomy.yml'}) }}">
-                            <i class="icon-tags"></i> {{ __('Taxonomy') }}</a></li>
-                        <li><a href="{{ path('fileedit', { 'file': 'app/config/menu.yml'}) }}">
-                            <i class="icon-list"></i> {{ __('Menu setup') }}</a></li>
-                        <li><a href="{{ path('fileedit', { 'file': 'app/config/routing.yml'}) }}">
-                            <i class="icon-random"></i> {{ __('Routing setup') }}</a></li>
+                        {% if isallowed('users') %}
+                            <li><a href="{{ path('users') }}"><i class="icon-group"></i> {{ __('Users') }}</a></li>
+                        {% endif %}
+                        {% if isallowed('files:config') %}
+                            <li><a href="{{ path('fileedit', { 'file': 'app/config/config.yml'}) }}">
+                                <i class="icon-cog"></i> {{ __('Configuration') }}</a></li>
+                            <li><a href="{{ path('fileedit', { 'file': 'app/config/contenttypes.yml'}) }}">
+                                <i class="icon-hdd"></i> {{ __('Contenttypes') }}</a></li>
+                            <li><a href="{{ path('fileedit', { 'file': 'app/config/taxonomy.yml'}) }}">
+                                <i class="icon-tags"></i> {{ __('Taxonomy') }}</a></li>
+                            <li><a href="{{ path('fileedit', { 'file': 'app/config/menu.yml'}) }}">
+                                <i class="icon-list"></i> {{ __('Menu setup') }}</a></li>
+                            <li><a href="{{ path('fileedit', { 'file': 'app/config/routing.yml'}) }}">
+                                <i class="icon-random"></i> {{ __('Routing setup') }}</a></li>
+                        {% endif %}
                         <li class="divider"></li>
                     {% endif %}
 
@@ -106,7 +129,11 @@
 
             {# Logout #}
             <li>
-                <a href="{{ path('logout') }}"><i class="icon-signout"></i> {{ __('Logout %name%', {'%name%': user.displayname|trimtext(16)}) }}</a>
+                <form action="{{ path('logout') }}" method="POST">
+                    <button class="btn btn-link" type="submit">
+                        <i class="icon-signout"></i> {{ __('Logout %name%', {'%name%': user.displayname|trimtext(16)}) }}
+                    </button>
+                </form>
             </li>
         {% else %}
 

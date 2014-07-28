@@ -104,7 +104,7 @@ class Log
             $log['content_id'] = intval($content->id);
         } else {
             $log['contenttype'] = "";
-            $log['content_id'] = "";
+            $log['content_id'] = 0;
         }
 
         // echo "<pre>\n" . util::var_dump($log, true) . "</pre>\n";
@@ -188,7 +188,7 @@ class Log
     /**
      * Getting a previously set value
      *
-     * @param string $key
+     * @param  string $key
      * @return string
      */
     public function getValue($key)
@@ -203,25 +203,26 @@ class Log
     /**
      * Getting all previously set values
      *
-     * @param string $key
+     * @internal param string $key
      * @return array
      */
     public function getValues()
     {
-
         return $this->values;
 
     }
 
 
-    public function trim() {
-
-        $query = sprintf("DELETE FROM %s WHERE level='1';",
+    public function trim()
+    {
+        $query = sprintf(
+            "DELETE FROM %s WHERE level='1';",
             $this->tablename
         );
         $this->app['db']->executeQuery($query);
 
-        $query = sprintf("DELETE FROM %s WHERE level='2' AND date < ?;",
+        $query = sprintf(
+            "DELETE FROM %s WHERE level='2' AND date < ?;",
             $this->tablename
         );
 
@@ -231,7 +232,8 @@ class Log
             array(\PDO::PARAM_STR)
         );
 
-        $query = sprintf("DELETE FROM %s WHERE date < ?;",
+        $query = sprintf(
+            "DELETE FROM %s WHERE date < ?;",
             $this->tablename
         );
         $this->app['db']->executeQuery(
@@ -242,21 +244,24 @@ class Log
 
     }
 
-    public function clear() {
-
+    public function clear()
+    {
         $configdb = $this->app['config']->getDBOptions();
 
-        if (isset($configdb['driver']) && ( $configdb['driver'] == "pdo_sqlite" ) ) {
+        if (isset($configdb['driver']) && ($configdb['driver'] == "pdo_sqlite")) {
 
             // sqlite
-            $query = sprintf("DELETE FROM %s; UPDATE SQLITE_SEQUENCE SET seq = 0 WHERE name = '%s'",
-                $this->tablename, $this->tablename
+            $query = sprintf(
+                "DELETE FROM %s; UPDATE SQLITE_SEQUENCE SET seq = 0 WHERE name = '%s'",
+                $this->tablename,
+                $this->tablename
             );
 
         } else {
 
             // mysql
-            $query = sprintf('TRUNCATE %s;',
+            $query = sprintf(
+                'TRUNCATE %s;',
                 $this->tablename
             );
 
@@ -266,7 +271,4 @@ class Log
         $this->app['db']->executeQuery($query);
 
     }
-
-
-
 }

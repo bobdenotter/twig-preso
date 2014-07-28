@@ -28,7 +28,7 @@ class ExtensionsDisable extends BaseCommand
         $lines = array();
         $update = false;
 
-        foreach($extensions as $key => $extension) {
+        foreach ($extensions as $key => $extension) {
             if ($extension['enabled']) {
                 if (strtolower($key)==strtolower($name)) {
                     $lines[] = "<info>Disabling <options=bold>$key</options=bold>.</info>";
@@ -42,7 +42,7 @@ class ExtensionsDisable extends BaseCommand
 
         if ($update) {
             $key = "enabled_extensions";
-            $file = $this->app['paths']['apppath']."/config/config.yml";
+            $file = BOLT_CONFIG_DIR . "/config.yml";
             $yaml = new \Bolt\YamlUpdater($file);
             $result = $yaml->change($key, $enabled);
 
@@ -53,7 +53,7 @@ class ExtensionsDisable extends BaseCommand
             }
 
         } else {
-            "<info><options=bold>$name</options=bold> is already disabled.</info>";
+            $lines[] = "<info><options=bold>$name</options=bold> is already disabled.</info>";
         }
 
         $output->writeln(implode("\n", $lines));

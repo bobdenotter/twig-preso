@@ -6,7 +6,12 @@ class SetcontentNode extends \Twig_Node
 {
     public function __construct($name, $contenttype, $arguments, $wherearguments, $lineno, $tag = null)
     {
-        parent::__construct(array('wherearguments' => $wherearguments), array('name' => $name, 'contenttype' => $contenttype, 'arguments' => $arguments), $lineno, $tag);
+        parent::__construct(
+            array('wherearguments' => $wherearguments),
+            array('name' => $name, 'contenttype' => $contenttype, 'arguments' => $arguments),
+            $lineno,
+            $tag
+        );
     }
 
     public function compile(\Twig_Compiler $compiler)
@@ -19,7 +24,8 @@ class SetcontentNode extends \Twig_Node
             ->write('$context[\'' . $this->getAttribute('name') . '\'] = ')
             ->write('$template_storage->getContent(')
             ->subcompile($this->getAttribute('contenttype'))
-            ->raw(", " . var_export($arguments, true) );
+            ->raw(", ")
+            ->subcompile($arguments);
 
         if (!is_null($this->getNode('wherearguments'))) {
             $compiler
@@ -27,8 +33,7 @@ class SetcontentNode extends \Twig_Node
                 ->subcompile($this->getNode('wherearguments'));
         }
 
-            $compiler
-            ->raw(" );\n");
+        $compiler->raw(" );\n");
 
     }
 }

@@ -21,7 +21,7 @@ body {
 }
 
 body.popup {
-    padding: 0px 12px;
+    padding: 6px 12px 0;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -56,13 +56,16 @@ strong, b {
     font-weight: 600;
 }
 
-tt, code {
-    background-color: #E8E8E8;
-    color: #555;
-    padding: 1px 2px;
+tt, code, .source-code {
     font-family: Menlo, Consolas, Monaco, "Courier New", monospace;
+}
+
+tt, code {
+    padding: 1px 2px;
     border: 0px;
     white-space: pre;
+    color: #555;
+    background-color: #E8E8E8;
 }
 
 pre {
@@ -139,6 +142,14 @@ hr {
     margin-top: 12px;
 }
 
+.loginform p.cookie-notice {
+    display: none;
+}
+
+html.no-cookies .loginform p.cookie-notice {
+    display: block;
+}
+
 .togglepass {
     color: #999;
     float: right;
@@ -200,10 +211,34 @@ hr {
     line-height: 19px;
 }
 
+.navbar .nav > li > form > button.btn,
 .navbar .nav > li > a {
     color: #E7E7E7;
     font-weight: bold;
     padding: 9px 10px 11px;
+    margin: 0 0 0 0;
+}
+
+.navbar .nav > li > form > button.btn {
+    line-height: inherit;
+    border-width: 0;
+    vertical-align: inherit;
+    text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.25);
+    display: inline;
+    font-weight: bold !important;
+    font-size: 13px;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.navbar form {
+    margin: 0 0 0 0;
+    padding: 0 0 0 0;
+    display: inline;
+}
+
+.navbar .nav > li > form > button.btn:hover {
+    color: white;
+    text-decoration: none;
 }
 
 .navbar .nav .active > a,
@@ -266,6 +301,31 @@ footer  {
 }
 .popover-content p {
     margin: 4px 0;
+}
+
+/* Note: We only use popover-bottom for items on the stack. If we start using it
+   for anything else, we need to specify the selector further */
+.popover.bottom {
+    width: 220px;
+    margin-left: 110px;
+    margin-top: 4px;
+}
+
+.popover.bottom .popover-content, .popover.bottom .popover-content code {
+    font-size: 12px;
+    overflow:hidden;
+}
+
+.table-changelog-details th {
+    width: 40%;
+}
+
+.table-changelog-details th:first-child {
+    width: 20%;
+}
+
+.table-changelog-details td {
+    vertical-align: top;
 }
 
 /**
@@ -424,6 +484,36 @@ ul.dropdown-menu li a.nolink {
     color: #888 !important;
 }
 
+ul.dropdown-menu li form {
+    margin: 0;
+    padding: 0;
+}
+
+ul.dropdown-menu li form .btn-link {
+    font-size: 13px;
+    padding: 1px 14px;
+    border: none;
+    color: #333333;
+    text-shadow: none;
+    display: block;
+    width: 100%;
+    text-align: left;
+}
+
+ul.dropdown-menu li form .btn-link:hover {
+    text-decoration:none;
+    text-shadow: none;
+    color:#ffffff;
+    background-color:#0081c2;
+    background-image:-moz-linear-gradient(top, #0088cc, #0077b3);
+    background-image:-webkit-gradient(linear, 0 0, 0 100%, from(#0088cc), to(#0077b3));
+    background-image:-webkit-linear-gradient(top, #0088cc, #0077b3);
+    background-image:-o-linear-gradient(top, #0088cc, #0077b3);
+    background-image:linear-gradient(to bottom, #0088cc, #0077b3);
+    background-repeat:repeat-x;
+    filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#ff0088cc', endColorstr='#ff0077b3', GradientType=0);
+}
+
 aside {
     margin-top: 15px;
 }
@@ -453,14 +543,14 @@ aside .morelink {
 
 aside section p {
     font-size: 12px;
-    line-height: 16px;
+    line-height: 18px;
     margin: 4px 0;
 }
 
-aside section p {
-    font-size: 12px;
-    line-height: 18px;
-    margin: 4px 0;
+aside section p.filetypes {
+    font-size: 90%;
+    color: #888;
+    margin: -4px 0 6px;
 }
 
 
@@ -489,6 +579,119 @@ aside .btn {
 }
 
 /**
+ * Stacked files
+ */
+#protostack {
+    display: none;
+}
+
+#stackholder {
+    height: 120px;
+    padding: 12px 0 12px 2px;
+    /* overflow: hidden; */
+}
+
+.stackitem {
+    border: 6px solid #fff;
+    background-color: #DDD;
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, .25);
+    width: 100px;
+    height: 100px;
+    position: relative;
+    float: left;
+    left: 0px;
+    margin-right: -80px;
+    overflow: hidden;
+}
+
+.stackitem-wide {
+    margin-right: -35px
+}
+
+.stackitem strong {
+    display: block;
+    text-align: center;
+    font-size: 16px;
+    margin: 10px auto;
+}
+
+.stackitem small {
+    display: block;
+    text-align: center;
+    font-size: 12px;
+    line-height: 15px;
+    margin: 0px 5px;
+    word-break: break-all;
+}
+
+
+.stackitem:hover {
+    z-index: 120 !important;
+    box-shadow: 0px 0px 4px rgba(0, 0, 0, .5);
+}
+
+.stackitem.item-1 {
+    z-index: 110;
+}
+
+
+.stackitem.item-2 {
+    z-index: 109;
+    -webkit-transform: rotate(4deg);
+    -moz-transform: rotate(4deg);
+    -o-transform: rotate(4deg);
+    -ms-transform: rotate(4deg);
+    transform: rotate(4deg);
+    margin-top: 8px;
+}
+
+.stackitem.item-3 {
+    z-index: 108;
+    -webkit-transform: rotate(-3deg);
+    -moz-transform: rotate(-3deg);
+    -o-transform: rotate(-3deg);
+    -ms-transform: rotate(-3deg);
+    transform: rotate(-3deg);
+    margin-top: -8px;
+}
+
+.stackitem.item-4 {
+    z-index: 107;
+    -webkit-transform: rotate(9deg);
+    -moz-transform: rotate(9deg);
+    -o-transform: rotate(9deg);
+    -ms-transform: rotate(9deg);
+    transform: rotate(9deg);
+    margin-top: 3px;
+}
+
+.stackitem.item-5 {
+    z-index: 106;
+    margin-top: -6px;
+}
+
+.stackitem.item-6 {
+    z-index: 105;
+    -webkit-transform: rotate(3deg);
+    -moz-transform: rotate(3deg);
+    -o-transform: rotate(3deg);
+    -ms-transform: rotate(3deg);
+    transform: rotate(3deg);
+    margin-top: 5px;
+}
+
+.stackitem.item-7 {
+    z-index: 104;
+    -webkit-transform: rotate(-5deg);
+    -moz-transform: rotate(-5deg);
+    -o-transform: rotate(-5deg);
+    -ms-transform: rotate(-5deg);
+    transform: rotate(-5deg);
+    margin-top: -3px;
+}
+
+
+/**
  * Extensions screen
  */
 
@@ -499,7 +702,6 @@ div.extension {
     padding: 0 10px 8px;
     margin: 0 10px 8px 0;
     box-shadow: 1px 1px 3px rgba(0, 0, 0, .25);
-
 }
 
 div.extension h3 {
@@ -535,7 +737,7 @@ label span.left {
     display: block;
     float: left;
     min-width: 180px;
-    margin-top: 5px;
+    margin: 5px 8px 0 0;
 }
 
 input[type="checkbox"] {
@@ -638,7 +840,7 @@ fieldset.checkbox div {
 }
 
 #editcontent div.image-container {
-    height: 120px;
+    height: 140px;
     padding-right: 130px;
 }
 
@@ -700,16 +902,23 @@ fieldset.checkbox div {
     box-shadow:  1px 1px 2px 0px rgba(0, 0, 0, 0.3);
 }
 
-
 #editcontent .dropzone {
     margin: 1em 0 0.5em;
-    height: 120px;
+    height: 176px;
     width: 97%;
     clear: both;
 }
 
 #editcontent .geolocation {
-    height: 170px;
+    height: 180px;
+}
+
+#editcontent .video {
+    height: 140px;
+}
+
+#editcontent .imageselect {
+    height: 176px;
 }
 
 #editcontent .dropzone.hover, #editcontent .dropzone.in  {
@@ -729,8 +938,19 @@ fieldset.checkbox div {
     color: #666;
 }
 
+#editcontent p.filetypes {
+    font-size: 90%;
+    color: #888;
+    margin: -4px 0 6px;
+}
+
+
+#editcontent p.filetypes code {
+    color: #888;
+}
+
 .progress {
-    width: 30%;
+    width: 20%;
     display: none;
     margin-bottom: 0;
 }
@@ -752,22 +972,22 @@ fieldset.checkbox div {
     cursor: pointer;
 }
 
-#editcontent div.imagelistholder.dropzone {
+#editcontent div.imagelistholder.dropzone,
+#editcontent div.filelistholder.dropzone {
     height: auto;
 }
 
-#editcontent div.imagelistholder textarea {
-    display: none;
-}
 
-#editcontent div.imagelistholder p {
+#editcontent div.imagelistholder p,
+#editcontent div.filelistholder p {
     padding: 8px;
     color: #999;
     margin: 0;
     font-style: italic;
 }
 
-#editcontent div.imagelistholder div.list {
+#editcontent div.imagelistholder div.list,
+#editcontent div.filelistholder div.list {
     border: 1px solid #BBB;
     padding: 0 2px;
     float: left;
@@ -783,31 +1003,59 @@ fieldset.checkbox div {
     border-radius: 3px;
     cursor: ns-resize;
     box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
 }
 
+#editcontent div.filelistholder div.list div {
+    height: 70px;
+    margin: 6px;
+    border-radius: 3px;
+    cursor: ns-resize;
+    box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    background: url("/app/view/css/smoothness/images/ui-bg_glass_75_e6e6e6_1x400.png") repeat-x scroll 50% 61% rgb(230, 230, 230);
+}
+#editcontent div.filelistholder div.list .fileDescription {
+    font-size: 80%;
+    font-weight: bold;
+}
 
-#editcontent div.imagelistholder div.list div * {
+#editcontent div.imagelistholder div.list div *,
+#editcontent div.filelistholder div.list div * {
     float: left;
     margin: 4px 3px 0;
     padding-left: 4px;
 }
 
-#editcontent div.imagelistholder div.list div input {
+#editcontent div.imagelistholder div.list div input,
+#editcontent div.filelistholder div.list div input {
     width: 264px;
     margin: 9px 0 0 4px;
 }
 
-#editcontent div.imagelistholder div.list div i {
+#editcontent div.imagelistholder div.list div i,
+#editcontent div.filelistholder div.list div i {
     margin: 11px 0 0;
     padding: 0;
     cursor: pointer;
     color: #999;
 }
 
-#editcontent div.imagelistholder div.buttons {
-    display: inline;
+#editcontent div.imagelistholder div.buttons,
+#editcontent div.filelistholder div.buttons {
     float: left;
     padding: 7px 8px;
+}
+
+#editcontent div.tagcloud {
+    margin-left: 180px;
+    margin-top: 6px;
+    width: 70%;
+}
+
+#editcontent div.tagcloud a {
+    margin-right: 6px;
+    display: inline-block;
 }
 
 .ui-sortable-helper {
@@ -824,7 +1072,7 @@ fieldset.checkbox div {
 /** Overrides for CKeditor */
 
 .cke_reset_all, .cke_reset_all * {
-    max-width: 1000px;
+    max-width: 1500px;
 }
 
 .cke_chrome {
@@ -889,6 +1137,10 @@ fieldset.checkbox div {
 
 .cke_toolbar_separator {
     background-color: #BBB !important;
+}
+
+.cke_dialog_ui_input_text {
+    min-height: 24px; /* Because IE8 and IE9 are cray-cray. */
 }
 
 /* Overrides for CodeMirror */
@@ -1051,6 +1303,11 @@ blockquote.quote cite {
         visibility: hidden;
     }
 
+    #editcontent div.tagcloud {
+        margin-left: 0;
+        width: 100%;
+    }
+
 }
 
 @media (max-width: 768px) {
@@ -1124,7 +1381,6 @@ blockquote.quote cite {
     #editcontent div.video-container {
         padding-right: 0;
     }
-
 }
 
 @media (max-width: 979px) {

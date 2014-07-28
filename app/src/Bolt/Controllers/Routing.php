@@ -3,9 +3,6 @@ namespace Bolt\Controllers;
 
 use Silex;
 use Silex\ControllerProviderInterface;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
-
 
 /**
  * Configurable routes controller
@@ -48,27 +45,23 @@ class Routing implements ControllerProviderInterface
     {
         $ctr = $app['controllers_factory'];
 
-        foreach($routes as $binding => $routeconfig) {
-            $path         = false;
-            $to           = false;
-            $route        = false;
-            $host         = false;
-            $_controller  = false;
-            $_before      = false;
-            $_after       = false;
-            $defaults     = array();
+        foreach ($routes as $binding => $routeconfig) {
+            $path = false;
+            $to = false;
+            $route = false;
+            $host = false;
+            $_before = false;
+            $_after = false;
+            $defaults = array();
             $requirements = array();
 
-
             // set some defaults in the YAML
-
             if ((!isset($routeconfig['defaults'])) || (!isset($routeconfig['defaults']['_before']))) {
                 $routeconfig['defaults']['_before'] = '::before';
             }
             if ((!isset($routeconfig['defaults'])) || (!isset($routeconfig['defaults']['_after']))) {
                 $routeconfig['defaults']['_after'] = '::after';
             }
-
 
             // parse YAML structure
 
@@ -85,19 +78,17 @@ class Routing implements ControllerProviderInterface
                     unset($defaults['_controller']);
                 }
                 if (isset($defaults['_before'])) {
-                    if ((substr($defaults['_before'] ,0, 2) == '::') && (is_array($to))) {
+                    if ((substr($defaults['_before'], 0, 2) == '::') && (is_array($to))) {
                         $_before = array($to[0], substr($defaults['_before'], 2));
-                    }
-                    else {
+                    } else {
                         $_before = $defaults['_before'];
                     }
                     unset($defaults['_before']);
                 }
                 if (isset($defaults['_after'])) {
-                    if ((substr($defaults['_after'] ,0, 2) == '::') && (is_array($to))) {
+                    if ((substr($defaults['_after'], 0, 2) == '::') && (is_array($to))) {
                         $_after = array($to[0], substr($defaults['_after'], 2));
-                    }
-                    else {
+                    } else {
                         $_after = $defaults['_after'];
                     }
                     unset($defaults['_after']);
@@ -109,7 +100,6 @@ class Routing implements ControllerProviderInterface
             if (isset($routeconfig['host'])) {
                 $host = $routeconfig['host'];
             }
-
 
             // build an actual route
 
@@ -124,11 +114,11 @@ class Routing implements ControllerProviderInterface
                     $route->after($_after);
                 }
 
-                foreach($requirements as $variable => $regexp) {
+                foreach ($requirements as $variable => $regexp) {
                     $proper_regexp = $this->getProperRegexp($regexp);
                     $route->assert($variable, $proper_regexp);
                 }
-                foreach($defaults as $variable => $default) {
+                foreach ($defaults as $variable => $default) {
                     $route->value($variable, $default);
                 }
                 if ($host !== false) {
@@ -149,9 +139,14 @@ class Routing implements ControllerProviderInterface
      */
     private function getProperRegexp($regexp)
     {
+        if (is_array($regexp)) {
+            return call_user_func_array($regexp[0], $regexp[1]);
+        }
+
         if (strpos($regexp, '::') > 0) {
             return call_user_func($regexp);
         }
+
         return $regexp;
     }
 
@@ -185,5 +180,25 @@ class Routing implements ControllerProviderInterface
     public static function getPluralTaxonomyTypeRequirement()
     {
         return self::$app['storage']->getTaxonomyTypeAssert(false);
+    }
+
+    /**
+     * Return slugs of existing taxonomy values.
+     */
+    public static function getTaxonomyRequirement($taxonomyName, $emptyValue = null)
+    {
+        $taxonomyValues = self::$app['config']->get('taxonomy/'.$taxonomyName.'/options');
+        
+        // If by accident, someone uses a "tags" taxonomy.
+        if ($taxonomyValues==null) {
+            return "[a-z0-9-_]+";
+        }
+        $taxonomyValues = array_keys($taxonomyValues);
+        $requirements = implode('|', $taxonomyValues);
+
+        if ($emptyValue!=null) {
+            $requirements .= '|'.$emptyValue;
+        }
+        return $requirements;
     }
 }

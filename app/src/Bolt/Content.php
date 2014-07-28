@@ -1,12 +1,13 @@
 <?php
 
-Namespace Bolt;
+namespace Bolt;
 
-Use Silex;
+use Silex;
+use Symfony\Component\Filesystem\Filesystem;
 
 class Content implements \ArrayAccess
 {
-    private $app;
+    protected $app;
     public $id;
     public $values;
     public $taxonomy;
@@ -31,6 +32,17 @@ class Content implements \ArrayAccess
                     if ($this->app['config']->get('taxonomy/'.$taxonomytype.'/behaves_like') == "grouping") {
                         $this->setGroup('', '', $taxonomytype);
                     }
+
+                    // add support for taxonomy default value when options is set
+                    $default_value = $this->app['config']->get('taxonomy/'.$taxonomytype.'/default');
+                    $options = $this->app['config']->get('taxonomy/'.$taxonomytype.'/options');
+                    if (     isset( $options ) &&
+                            isset($default_value) &&
+                            array_search($default_value, array_keys($options)) !== false ) {
+                            $name = $this->app['config']->get('taxonomy/'.$taxonomytype.'/options/'.$default_value);
+                            $this->setTaxonomy($taxonomytype, $default_value);
+                            $this->sortTaxonomy();
+                    }
                 }
             }
         }
@@ -43,7 +55,7 @@ class Content implements \ArrayAccess
             // Ininitialize fields with empty values.
             $values = array();
             if (is_array($this->contenttype)) {
-                foreach($this->contenttype['fields'] as $key => $parameters) {
+                foreach ($this->contenttype['fields'] as $key => $parameters) {
                     // Set the default values.
                     if (isset($parameters['default'])) {
                         $values[$key] = $parameters['default'];
@@ -62,21 +74,42 @@ class Content implements \ArrayAccess
             $values['name'] = "(undefined $contenttypename)";
             $values['title'] = "(undefined $contenttypename)";
 
-            // If default status is set in contentttype..
-            if (!empty($this->contenttype['default_status'])) {
-                $values['status'] = $this->contenttype['default_status'];
-            }
-
             $this->setValues($values);
 
         }
 
     }
 
+    /**
+     * Gets a list of the base columns that are hard-coded into all content
+     * types (rather than configured through contenttypes.yml).
+     */
+    public static function getBaseColumns()
+    {
+        return array(
+                'id',
+                'slug',
+                'datecreated',
+                'datechanged',
+                'datepublish',
+                'datedepublish',
+                'ownerid',
+                'status');
+
+    }
+
     public function setValues(Array $values)
     {
 
-        foreach($values as $key => $value) {
+        // Since Bolt 1.4, we use 'ownerid' instead of 'username' in the DB tables. If we get an array that has an
+        // empty 'ownerid', attempt to set it from the 'username'. In $this->setValue the user will be set, regardless
+        // of ownerid is an 'id' or a 'username'.
+        if (empty($values['ownerid']) && !empty($values['username'])) {
+            $values['ownerid'] = $values['username'];
+            unset($values['username']);
+        }
+
+        foreach ($values as $key => $value) {
             $this->setValue($key, $value);
         }
 
@@ -84,6 +117,7 @@ class Content implements \ArrayAccess
 
         if (!isset($this->values['datecreated']) ||
             !preg_match("/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/", $this->values['datecreated'])) {
+            // Not all DB-engines can handle a date like '0000-00-00', so we pick a safe date, that's far enough in the past.
             $this->values['datecreated'] = "1970-01-01 00:00:00";
         }
 
@@ -99,19 +133,37 @@ class Content implements \ArrayAccess
 
         if (!isset($this->values['datedepublish']) ||
             !preg_match("/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/", $this->values['datecreated'])) {
-            $this->values['datedepublish'] = "0000-00-00 00:00:00";
+            // Not all DB-engines can handle a date like '0000-00-00', so we pick a safe date, that's far enough in the past.
+            $this->values['datedepublish'] = "1900-01-01 00:00:00";
         }
 
+        // If default status is set in contentttype..
+        if (empty($this->values['status'])) {
+            $this->values['status'] = $this->contenttype['default_status'];
+        }
+
+        $serialized_field_types = array(
+            'geolocation',
+            'imagelist',
+            'image',
+            'file',
+            'filelist',
+            'video',
+            'select',
+            'templateselect',
+            'checkbox');
         // Check if the values need to be unserialized, and pre-processed.
         foreach ($this->values as $key => $value) {
-            if (!empty($value) && is_string($value) && substr($value, 0, 2)=="a:") {
-                $unserdata = @unserialize($value);
-                if ($unserdata !== false) {
-                    $this->values[$key] = $unserdata;
+            if (in_array($this->fieldtype($key), $serialized_field_types)) {
+                if (!empty($value) && is_string($value) && (substr($value, 0, 2)=="a:" || $value[0] === '[' || $value[0] === '{')) {
+                    $unserdata = @smart_unserialize($value);
+                    if ($unserdata !== false) {
+                        $this->values[$key] = $unserdata;
+                    }
                 }
             }
 
-            if ($this->fieldtype($key)=="video" && is_array($this->values[$key]) && !empty($this->values[$key]['url']) ) {
+            if ($this->fieldtype($key)=="video" && is_array($this->values[$key]) && !empty($this->values[$key]['url'])) {
 
                 $video = $this->values[$key];
 
@@ -124,7 +176,7 @@ class Content implements \ArrayAccess
                 $responsiveclass = "responsive-video";
 
                 // See if it's widescreen or not..
-                if (!empty($video['height']) && ( ($video['width'] / $video['height']) > 1.76) ) {
+                if (!empty($video['height']) && ( ($video['width'] / $video['height']) > 1.76)) {
                     $responsiveclass .= " widescreen";
                 }
 
@@ -158,7 +210,7 @@ class Content implements \ArrayAccess
 
         // Check if the value need to be unserialized..
         if (is_string($value) && substr($value, 0, 2)=="a:") {
-            $unserdata = @unserialize($value);
+            $unserdata = @smart_unserialize($value);
             if ($unserdata !== false) {
                 $value = $unserdata;
             }
@@ -168,20 +220,20 @@ class Content implements \ArrayAccess
             $this->id = $value;
         }
 
-        if ($key == 'username') {
+        // Set the user in the object.
+        if ($key === 'ownerid' && !empty($value)) {
             $this->user = $this->app['users']->getUser($value);
         }
 
-
         // Only set values if they have are actually a field.
-        $allowedcolumns = array('id', 'slug', 'datecreated', 'datechanged', 'datepublish', 'datedepublish', 'username', 'status', 'taxonomy');
+        $allowedcolumns = self::getBaseColumns();
+        $allowedcolumns[] = 'taxonomy';
         if (!isset($this->contenttype['fields'][$key]) && !in_array($key, $allowedcolumns)) {
             return;
         }
 
-
-        if ($key == 'datecreated' || $key == 'datechanged' || $key == 'datepublish') {
-            if ( !preg_match("/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/", $value) ) {
+        if ($key == 'datecreated' || $key == 'datechanged' || $key == 'datepublish' || $key == 'datedepublish') {
+            if (!preg_match("/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/", $value)) {
                 // @todo Try better date-parsing, instead of just setting it to 'now'..
                 $value = date("Y-m-d H:i:s");
             }
@@ -201,14 +253,30 @@ class Content implements \ArrayAccess
 
         $values = cleanPostedData($values);
 
-        // Make sure we set the correct username, if the current user isn't allowed to change it.
-        if (!$this->app['users']->isAllowed('editcontent:all')) {
-            $values['username'] = $this->app['users']->getCurrentUsername();
+        if (!$this->id) {
+            // this is a new record: current user becomes the owner.
+            $user = $this->app['users']->getCurrentUser();
+            $this['ownerid'] = $user['id'];
+        }
+
+        // If the owner is set explicitly, check if the current user is allowed
+        // to do this.
+        if (isset($values['ownerid'])) {
+            if ($this['ownerid'] != $values['ownerid']) {
+                if (!$this->app['users']->isAllowed("contenttype:$contenttype:change-ownership:{$this->id}")) {
+                    throw new \Exception("Changing ownership is not allowed.");
+                }
+                $this['ownerid'] = intval($values['ownerid']);
+            }
         }
 
         // Make sure we have a proper status..
         if (!in_array($values['status'], array('published', 'timed', 'held', 'draft'))) {
-            $values['status'] = "published";
+            if ($this['status']) {
+                $values['status'] = $this['status'];
+            } else {
+                $values['status'] = "draft";
+            }
         }
 
         // If we set a 'publishdate' in the future, and the status is 'published', set it to 'timed' instead.
@@ -244,6 +312,8 @@ class Content implements \ArrayAccess
         if (!empty($values['relation'])) {
             $this->relation = $values['relation'];
             unset($values['relation']);
+        } else {
+            $this->relation = array();
         }
 
         // @todo check for allowed file types..
@@ -256,10 +326,12 @@ class Content implements \ArrayAccess
                     continue; // Skip 'empty' uploads..
                 }
 
-                $filename = sprintf("%s/files/%s/%s",
+                $filename = sprintf(
+                    "%s/files/%s/%s",
                     $this->app['paths']['rootpath'],
                     date("Y-m"),
-                    safeString($file['name'][0], false, "[]{}()"));
+                    safeString($file['name'][0], false, "[]{}()")
+                );
                 $basename = sprintf("/%s/%s", date("Y-m"), safeString($file['name'][0], false, "[]{}()"));
 
                 if ($file['error'][0] != UPLOAD_ERR_OK) {
@@ -272,10 +344,11 @@ class Content implements \ArrayAccess
                     continue;
                 }
 
-                $fieldname = substr($key, 11);
+                $fieldname  = substr($key, 11);
+                $fileSystem = new Filesystem;
 
                 // Make sure the folder exists.
-                makeDir(dirname($filename));
+                $fileSystem->mkdir(dirname($filename));
 
                 // Check if we don't have doubles.
                 if (is_file($filename)) {
@@ -356,14 +429,15 @@ class Content implements \ArrayAccess
      * @param $value
      * @param int $sortorder
      */
-    public function setTaxonomy($taxonomytype, $value, $sortorder=0)
+    public function setTaxonomy($taxonomytype, $slug, $name = '', $sortorder = 0)
     {
 
         // If $value is an array, recurse over it, adding each one by itself.
-        if (is_array($value)) {
-            foreach($value as $single) {
-                $this->setTaxonomy($taxonomytype, $single, $sortorder);
+        if (is_array($slug)) {
+            foreach ($slug as $single) {
+                $this->setTaxonomy($taxonomytype, $single, '', $sortorder);
             }
+
             return;
         }
 
@@ -371,26 +445,28 @@ class Content implements \ArrayAccess
         if ($this->app['config']->get('taxonomy/'.$taxonomytype.'/has_sortorder') == false) {
             $sortorder = false;
         } else {
-            $sortorder = (int)$sortorder;
+            $sortorder = (int) $sortorder;
             // Note: by doing this we assume a contenttype can have only one taxonomy which has has_sortorder: true.
             $this->sortorder = $sortorder;
         }
 
         // Make the 'key' of the array an absolute link to the taxonomy.
-        $link = sprintf("%s%s/%s", $this->app['paths']['root'], $taxonomytype, $value);
-
-        $this->taxonomy[$taxonomytype][$link] = $value;
+        $link = sprintf("%s%s/%s", $this->app['paths']['root'], $taxonomytype, $slug);
 
         // Set the 'name', for displaying the pretty name, if there is any.
-        if ($this->app['config']->get('taxonomy/'.$taxonomytype.'/options/'.$value)) {
-            $name = $this->app['config']->get('taxonomy/'.$taxonomytype.'/options/'.$value);
-        } else {
-            $name = ucfirst($value);
+        if ($this->app['config']->get('taxonomy/'.$taxonomytype.'/options/'.$slug)) {
+            $name = $this->app['config']->get('taxonomy/'.$taxonomytype.'/options/'.$slug);
+        } elseif (empty($name)) {
+            $name = $slug;
         }
+
+        $this->taxonomy[$taxonomytype][$link] = $name;
+
+
 
         // If it's a "grouping" type, set $this->group.
         if ($this->app['config']->get('taxonomy/'.$taxonomytype.'/behaves_like') == "grouping") {
-            $this->setGroup($value, $name, $taxonomytype, $sortorder);
+            $this->setGroup($slug, $name, $taxonomytype, $sortorder);
         }
 
     }
@@ -406,7 +482,7 @@ class Content implements \ArrayAccess
             return;
         }
 
-        foreach($this->taxonomy as $type => $values){
+        foreach ($this->taxonomy as $type => $values) {
             $taxonomytype = $this->app['config']->get('taxonomy/'.$type);
             // Don't order tags..
             if ($taxonomytype['behaves_like'] == "tags") {
@@ -415,7 +491,7 @@ class Content implements \ArrayAccess
 
             // Order them by the order in the contenttype.
             $new = array();
-            foreach($this->app['config']->get('taxonomy/'.$type.'/options') as $key => $value) {
+            foreach ($this->app['config']->get('taxonomy/'.$type.'/options') as $key => $value) {
                 if ($foundkey = array_search($key, $this->taxonomy[$type])) {
                     $new[$foundkey] = $value;
                 } elseif ($foundkey = array_search($value, $this->taxonomy[$type])) {
@@ -458,11 +534,13 @@ class Content implements \ArrayAccess
     /**
      * Set the 'group', 'groupname' and 'sortorder' properties of the current object.
      *
-     * @param string $value
+     * @param $group
      * @param string $name
      * @param string $taxonomytype
+     * @param int $sortorder
+     * @internal param string $value
      */
-    public function setGroup($group, $name = "", $taxonomytype, $sortorder = 0)
+    public function setGroup($group, $name, $taxonomytype, $sortorder = 0)
     {
         $this->group = array(
             'slug' => $group,
@@ -473,7 +551,7 @@ class Content implements \ArrayAccess
 
         // Only set the sortorder, if the contenttype has a taxonomy that has sortorder
         if ($has_sortorder !== false) {
-            $this->group['order'] = (int)$sortorder;
+            $this->group['order'] = (int) $sortorder;
         }
 
         // Set the 'index', so we can sort on it later.
@@ -490,8 +568,8 @@ class Content implements \ArrayAccess
     /**
      * Get the decoded version of a value of the current object.
      *
-     * @param string $name   name of the value to get
-     * @return mixed         decoded value or null when no value available
+     * @param  string $name name of the value to get
+     * @return mixed  decoded value or null when no value available
      */
     public function getDecodedValue($name)
     {
@@ -499,34 +577,53 @@ class Content implements \ArrayAccess
 
         if (isset($this->values[$name])) {
             $fieldtype = $this->fieldtype($name);
+            $fieldinfo = $this->fieldinfo($name);
+            $allowtwig = !empty($fieldinfo['allowtwig']);
 
             switch ($fieldtype) {
                 case 'markdown':
 
-                    $value = $this->preParse($this->values[$name]);
+                    $value = $this->preParse($this->values[$name], $allowtwig);
 
                     // Parse the field as Markdown, return HTML
-                    $markdownParser = new \dflydev\markdown\MarkdownParser();
-                    $value = $markdownParser->transformMarkdown($value);
-                    if (!empty($value)) {
-                        $value = new \Twig_Markup($value, 'UTF-8');
-                    }
+                    $value = \Parsedown::instance()->parse($value);
+
+                    // Sanitize/clean the HTML.
+                    $maid = new \Maid\Maid(array(
+                        'output-format' => 'html',
+                        'allowed-tags' => array('html', 'head', 'body', 'section', 'div', 'p', 'br', 'hr', 's', 'u', 'strong', 'em', 'i', 'b', 'li', 'ul', 'ol', 'menu', 'blockquote', 'pre', 'code', 'tt', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'dd', 'dl', 'dh', 'table', 'tbody', 'thead', 'tfoot', 'th', 'td', 'tr', 'a', 'img'),
+                        'allowed-attribs' => array('id', 'class', 'name', 'value', 'href', 'src')
+                    ));
+                    $value = $maid->clean($value);
+                    $value = new \Twig_Markup($value, 'UTF-8');
                     break;
 
                 case 'html':
                 case 'text':
                 case 'textarea':
 
-                    $value = $this->preParse($this->values[$name]);
-                    if (!empty($value)) {
-                        $value = new \Twig_Markup($value, 'UTF-8');
-                    }
+                    $value = $this->preParse($this->values[$name], $allowtwig);
+                    $value = new \Twig_Markup($value, 'UTF-8');
 
                     break;
 
                 case 'imagelist':
-                    // Parse the field as JSON, return the array
-                    $value = json_decode($this->values[$name]);
+                case 'filelist':
+                    if (is_string($this->values[$name])) {
+                        // Parse the field as JSON, return the array
+                        $value = json_decode($this->values[$name]);
+                    } else {
+                        // Already an array, do nothing.
+                        $value = $this->values[$name];
+                    }
+                    break;
+
+                case 'image':
+                    if (is_array($this->values[$name]) && isset($this->values[$name]['file'])) {
+                        $value = $this->values[$name]['file'];
+                    } else {
+                        $value = $this->values[$name];
+                    }
                     break;
 
                 default:
@@ -535,55 +632,43 @@ class Content implements \ArrayAccess
             }
         }
 
-        if ($value === "") {
-            return false;
-        } else {
-            return $value;
-        }
+        return $value;
     }
 
     /**
      * If passed snippet contains Twig tags, parse the string as Twig, and return the results
      *
-     * @param string $snippet
+     * @param  string $snippet
      * @return string
      */
-    public function preParse($snippet)
+    public function preParse($snippet, $allowtwig)
     {
 
         // Quickly verify that we actually need to parse the snippet!
-        if ( strpos($snippet, "{{")!==false || strpos($snippet, "{%")!==false || strpos($snippet, "{#")!==false ) {
+        if ($allowtwig && preg_match('/[{][{%#]/', $snippet)) {
 
             $snippet = html_entity_decode($snippet, ENT_QUOTES, 'UTF-8');
-
-            // There's a problem with Twig: parsing snippets that are longer than the filesystem limit for filenames.
-            // This is because Twig will _first_ attempt to locate the snippet as a file, and only _then_ parse it as a
-            // snippet. Therefore, if the snippet is too long, we split it, and parse it in several parts.
-            if (strlen($snippet) > 1800) {
-                // (First part), (opening twig brackets, rest of tag, closing twig brackets), (rest of string)
-                $result = preg_match('/(.*)({[{%#].*[}%#]})(.*)/ms', $snippet, $parts);
-                if ($result && count($parts)==4) {
-                    // Note: $parts[0] is always the entire snippet. We only need to parse parts 1, 2, 3..
-                    $snippet = $this->preParse($parts[1]) . $this->preParse($parts[2]) . $this->preParse($parts[3]);
-                }
-            } else {
-                // Render the snippet.
-                $snippet = $this->app['twig']->render($snippet);
-            }
-
+            return $this->app['safe_render']->render($snippet, $this->getTemplateContext());
         }
 
         return $snippet;
 
     }
 
+    public function getTemplateContext() {
+        return array(
+            'record' => $this,
+            $this->contenttype['singular_slug'] => $this // Make sure we can also access it as {{ page.title }} for pages, etc.
+        );
+    }
+
     /**
      * Magic __call function, used for when templates use {{ content.title }},
      * so we can map it to $this->values['title']
      *
-     * @param string $name       method name originally called
-     * @param array $arguments   arguments to the call
-     * @return mixed             return value of the call
+     * @param  string $name      method name originally called
+     * @param  array  $arguments arguments to the call
+     * @return mixed  return value of the call
      */
     public function __call($name, $arguments)
     {
@@ -624,30 +709,49 @@ class Content implements \ArrayAccess
     public function getTitle()
     {
 
-        if (isset($this->values['title'])) {
-            return $this->values['title'];
-        } elseif (isset($this->values['name'])) {
-            return $this->values['name'];
-        } elseif (isset($this->values['caption'])) {
-            return $this->values['caption'];
-        } elseif (isset($this->values['subject'])) {
-            return $this->values['subject'];
-        } else {
-
-            // Grab the first field of type 'text', and assume that's the title.
-            if (!empty($this->contenttype['fields'])) {
-                foreach($this->contenttype['fields'] as $key => $field) {
-                    if ($field['type']=='text') {
-                        return $this->values[ $key ];
-                    }
-                }
-            }
-
-            // nope, no title was found..
-            return "(untitled)";
+        if ($column = $this->getTitleColumnName()) {
+            return $this->values[$column];
         }
 
+        // nope, no title was found..
+        return "(untitled)";
+
     }
+
+    /**
+     * Get the columnname of the title, name, caption or subject..
+     */
+    public function getTitleColumnName()
+    {
+
+        // Sets the names of some 'common' names for the 'title' column.
+        $names = array('title', 'name', 'caption', 'subject');
+
+        // Some localised options as well
+        $names = array_merge($names, array('titel', 'naam', 'onderwerp')); // NL
+        $names = array_merge($names, array('nom', 'sujet')); // FR
+        $names = array_merge($names, array('nombre', 'sujeto')); // ES
+
+        foreach ($names as $name) {
+            if (isset($this->values[$name])) {
+                return $name;
+            }
+        }
+
+        // Otherwise, grab the first field of type 'text', and assume that's the title.
+        if (!empty($this->contenttype['fields'])) {
+            foreach ($this->contenttype['fields'] as $key => $field) {
+                if ($field['type']=='text') {
+                    return $key;
+                }
+            }
+        }
+
+        // nope, no title was found..
+        return false;
+
+    }
+
 
 
     /**
@@ -662,8 +766,12 @@ class Content implements \ArrayAccess
         }
 
         // Grab the first field of type 'image', and return that.
-        foreach($this->contenttype['fields'] as $key => $field) {
+        foreach ($this->contenttype['fields'] as $key => $field) {
             if ($field['type']=='image') {
+                // After v1.5.1 we store image data as an array
+                if (is_array($this->values[ $key ])) {
+                    return $this->values[ $key ]['file'];
+                }
                 return $this->values[ $key ];
             }
         }
@@ -679,79 +787,98 @@ class Content implements \ArrayAccess
     public function getReference()
     {
         $reference = $this->contenttype['singular_slug'] . "/" . $this->values['slug'];
+
         return $reference;
     }
 
     /**
-     * Creates a link to the content record
+     * Creates a URL for the content record.
      */
-    public function link($param = "")
+    public function link()
     {
-        // If there's no valid content, return no link.
         if (empty($this->id)) {
-            return '';
+            return null;
         }
 
-        $slugreference = $this->getReference();
+        list($binding, $route) = $this->getRoute();
 
-        $linkbinding = 'contentlink';
-        foreach($this->app['config']->get('routing') as $binding => $route) {
-            if (isset($route['recordslug']) && ($route['recordslug'] == $slugreference)) {
-                $linkbinding = $binding;
-                break;
-            }
-            if (isset($route['contenttype']) &&
-                ( ($route['contenttype'] == $this->contenttype['singular_slug']) || ($route['contenttype'] == $this->contenttype['slug']) ) ) {
-                $linkbinding = $binding;
-                break;
-            }
+        if(!$route) {
+            return null;
         }
 
-        $params = array(
-            'contenttypeslug' => $this->contenttype['singular_slug'],
-            'id' => $this->id,
-            'slug' => $this->values['slug']
-        );
-        foreach(array('datecreated', 'datepublish') as $key) {
-            $params[$key] = substr($this->values[$key], 0, 10);
-        }
+        $link = $this->app['url_generator']->generate($binding, array_filter(array_merge(
+            $route['defaults'] ?: array(),
+            $this->getRouteRequirementParams($route),
+            array(
+                'contenttypeslug' => $this->contenttype['singular_slug'],
+                'id'              => $this->id,
+                'slug'            => $this->values['slug']
+            )
+        )));
 
-        $link = $this->app['url_generator']->generate($linkbinding, $params);
-
+        // Strip the query string generated by supplementary parameters.
         // since our $params contained all possible arguments and the ->generate()
         // added all $params which it didn't need in the query-string we can
         // safely strip the query-string.
         // NB. this does mean we don't support routes with query strings
-        $link = preg_replace('|(.+)[?].*|', '\\1', $link);
+        return preg_replace('/^([^?]*).*$/', '\\1', $link);
+    }
 
-        return $link;
+    protected function getRouteRequirementParams(array $route)
+    {
+        $params = array();
+        foreach($route['requirements'] ?: array() as $fieldName => $requirement) {
+            if('\d{4}-\d{2}-\d{2}' === $requirement) {
+                // Special case, if we need to have a date
+                $params[$fieldName] = substr($this->values[$fieldName], 0, 10);
+            } elseif (isset($this->taxonomy[$fieldName])) {
+                // turn something like '/chapters/meta' to 'meta'
+                $params[$fieldName] = array_pop(explode('/', array_shift(array_keys($this->taxonomy[$fieldName]))));
+            } elseif (isset($this->values[$fieldName])) {
+                $params[$fieldName] = $this->values[$fieldName];
+            } else {
+                // unkown
+                $params[$fieldName] = null;
+            }
+        }
+        return $params;
+    }
+
+    /**
+     * Retrieves the first route applicable to the content as a two-element array consisting of the binding and the
+     * route array. Returns `null` if there is no applicable route.
+     */
+    protected function getRoute()
+    {
+        $allroutes = $this->app['config']->get('routing');
+
+        // First, try to find a custom route that's applicable
+        foreach ($allroutes as $binding => $route) {
+            if ($this->isApplicableRoute($binding, $route)) {
+                return array($binding, $route);
+            }
+        }
+
+        // Just return the 'generic' contentlink route.
+        if (!empty($allroutes['contentlink'])) {
+            return array('contentlink', $allroutes['contentlink']);
+        }
+
+        return null;
+    }
+
+    protected function isApplicableRoute($binding, array $route)
+    {
+        return (isset($route['contenttype']) && $route['contenttype'] === $this->contenttype['singular_slug']) ||
+        (isset($route['contenttype']) && $route['contenttype'] === $this->contenttype['slug']) ||
+        (isset($route['recordslug']) && $route['recordslug'] === $this->getReference());
     }
 
     /**
      * Get the previous record. ('previous' is defined as 'latest one published before this one')
      */
-    public function previous($field = "datepublish") {
-
-        $field = safeString($field);
-
-        $params = array(
-            $field => '<'.$this->values[$field],
-            'limit' => 1,
-            'order' => $field . ' ASC',
-            'returnsingle' => true
-        );
-
-        $previous = $this->app['storage']->getContent($this->contenttype['singular_slug'], $params);
-
-        return $previous;
-
-    }
-
-    /**
-     * Get the next record. ('next' is defined as 'first one published after this one')
-     */
-    public function next($field = "datepublish") {
-
+    public function previous($field = "datepublish", $where = array())
+    {
         $field = safeString($field);
 
         $params = array(
@@ -761,7 +888,27 @@ class Content implements \ArrayAccess
             'returnsingle' => true
         );
 
-        $next = $this->app['storage']->getContent($this->contenttype['singular_slug'], $params);
+        $previous = $this->app['storage']->getContent($this->contenttype['singular_slug'], $params, $dummy, $where);
+
+        return $previous;
+
+    }
+
+    /**
+     * Get the next record. ('next' is defined as 'first one published after this one')
+     */
+    public function next($field = "datepublish", $where = array())
+    {
+        $field = safeString($field);
+
+        $params = array(
+            $field => '<'.$this->values[$field],
+            'limit' => 1,
+            'order' => $field . ' DESC',
+            'returnsingle' => true
+        );
+
+        $next = $this->app['storage']->getContent($this->contenttype['singular_slug'], $params, $dummy, $where);
 
         return $next;
 
@@ -773,41 +920,33 @@ class Content implements \ArrayAccess
      * Gets one or more related records.
      *
      */
-    public function related($filtercontenttype="", $filterid="")
+    public function related($filtercontenttype = '', $filterid = '')
     {
 
         if (empty($this->relation)) {
-            // nothing to do here.
-            return false;
+            return false; // nothing to do here.
         }
 
         $records = array();
 
-        foreach($this->relation as $contenttype => $ids) {
-
-            if (!empty($filtercontenttype) && ($contenttype!=$filtercontenttype) ) {
+        foreach ($this->relation as $contenttype => $ids) {
+            if (!empty($filtercontenttype) && ($contenttype != $filtercontenttype)) {
                 continue; // Skip other contenttypes, if we requested a specific type.
             }
-
-            foreach($ids as $id) {
-
-                if (!empty($filterid) && ($id!=$filterid) ) {
+            foreach ($ids as $id) {
+                if (!empty($filterid) && ($id != $filterid)) {
                     continue; // Skip other ids, if we requested a specific id.
                 }
 
-                $record = $this->app['storage']->getContent($contenttype."/".$id);
+                $record = $this->app['storage']->getContent($contenttype . '/' . $id);
 
                 if (!empty($record)) {
-                    $records[] = $this->app['storage']->getContent($contenttype."/".$id);
+                    $records[] = $record;
                 }
-
             }
         }
-
         return $records;
-
     }
-
 
     /**
      * Gets the correct template to use, based on our cascading template rules.
@@ -819,6 +958,11 @@ class Content implements \ArrayAccess
         $template = $this->app['config']->get('general/record_template');
         $chosen = 'config';
 
+        $templatefile = $this->app['paths']['themepath'] . "/" . $this->contenttype['singular_slug'] . ".twig";
+        if (is_readable($templatefile)) {
+            $template = $this->contenttype['singular_slug'] . ".twig";
+            $chosen = 'singular_slug';
+        }
 
         if (isset($this->contenttype['record_template'])) {
             $templatefile = $this->app['paths']['themepath'] . "/" . $this->contenttype['record_template'];
@@ -828,14 +972,8 @@ class Content implements \ArrayAccess
             }
         }
 
-        $templatefile = $this->app['paths']['themepath'] . "/" . $this->contenttype['singular_slug'] . ".twig";
-        if (is_readable($templatefile)) {
-            $template = $this->contenttype['singular_slug'] . ".twig";
-            $chosen = 'singular_slug';
-        }
-
         foreach ($this->contenttype['fields'] as $name => $field) {
-            if ($field['type']=="templateselect" && !empty($this->values[$name]) ) {
+            if ($field['type']=="templateselect" && !empty($this->values[$name])) {
                 $template = $this->values[$name];
                 $chosen = 'record';
             }
@@ -848,25 +986,29 @@ class Content implements \ArrayAccess
     }
 
     /**
+     * Get field information for the given field.
+     * @param $key
+     * @return array An associative array containing at least the key 'type',
+     *               and, depending on the type, other keys.
+     */
+    public function fieldinfo($key)
+    {
+        if (isset($this->contenttype['fields'][$key])) {
+            return $this->contenttype['fields'][$key];
+        }
+        else {
+            return array('type' => '');
+        }
+    }
+
+    /**
      * Get the fieldtype for a given fieldname.
      * @param $key
      * @return string
      */
-    public function fieldtype($key)
-    {
-
-        if (empty($this->contenttype['fields'])) {
-            return '';
-        }
-
-        foreach ($this->contenttype['fields'] as $name => $field) {
-            if ($name == $key) {
-                return $field['type'];
-            }
-        }
-
-        return '';
-
+    public function fieldtype($key) {
+        $field = $this->fieldinfo($key);
+        return $field['type'];
     }
 
     /**
@@ -901,67 +1043,67 @@ class Content implements \ArrayAccess
      * Creates RSS safe content. Wraps it in CDATA tags, strips style and
      * scripts out. Can optionally also return a (cleaned) excerpt.
      *
-     * @param string $field The field to clean up
-     * @param int $excerptLength Number of chars of the excerpt
+     * @param  string $field         The field to clean up
+     * @param  int    $excerptLength Number of chars of the excerpt
      * @return string RSS safe string
      */
     public function rss_safe($field = '', $excerptLength = 0)
     {
-        if (array_key_exists($field, $this->values)){
-            if ($this->fieldtype($field) == 'html'){
+        if (array_key_exists($field, $this->values)) {
+            if ($this->fieldtype($field) == 'html') {
                 $value = $this->values[$field];
                 // Completely remove style and script blocks
-                // Remove script tags
-                $value = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i', '', $value);
-                // Remove style tags
-                $value = preg_replace('/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/i', '', $value);
-                // Strip other tags
-                // How about 'blockquote'?
-                $allowedTags = array('a', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'p', 'strong', 'em', 'u', 'strike');
-                $result = strip_tags($value, '<' . implode('><', $allowedTags) . '>');
-                if ($excerptLength > 0){
+                $maid = new \Maid\Maid(array(
+                    'allowed-tags' => array('a', 'b', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'p', 'strong', 'em', 'i', 'u', 'strike', 'ul', 'ol', 'li', 'img'),
+                    'output-format' => 'html'
+                ));
+                $result = $maid->clean($value);
+                if ($excerptLength > 0) {
                     $result = trimText($result, $excerptLength, false, true, false);
                 }
+
                 return '<![CDATA[ ' . $result . ' ]]>';
-            }
-            else {
+            } else {
                 return $this->values[$field];
             }
         }
+
         return "";
     }
 
     /**
      * Weight a text part relative to some other part
      *
-     * @param	string		the subject to search in
-     * @param	string		the complete search term (lowercased)
-     * @param	array		all the individuele search terms (lowercased)
-     * @param	integer		maximum number of points to return
-     * @return	integer		the weight
+     * @param  string  $subject  The subject to search in.
+     * @param  string  $complete The complete search term (lowercased).
+     * @param  array   $words    All the individual search terms (lowercased).
+     * @param  integer $max      Maximum number of points to return.
+     * @return integer           The weight
      */
-    private function weighQueryText($subject, $complete, $words, $max) {
+    private function weighQueryText($subject, $complete, $words, $max)
+    {
         $low_subject = mb_strtolower(trim($subject));
 
         if ($low_subject == $complete) {
             // a complete match is 100% of the maximum
             return round((100/100) * $max);
         }
-        if (strstr($low_subject,$complete)) {
+        if (strstr($low_subject, $complete)) {
             // when the whole query is found somewhere is 70% of the maximum
             return round((70/100) * $max);
         }
 
         $word_matches = 0;
         $cnt_words    = count($words);
-        for($i=0; $i < $cnt_words; $i++) {
-            if (strstr(' '.$low_subject.' ',' '.$words[$i].' ')) {
+        for ($i=0; $i < $cnt_words; $i++) {
+            if (strstr($low_subject, $words[$i])) {
                 $word_matches++;
             }
         }
         if ($word_matches > 0) {
-            // word matches are maximum of 50% of the maximum per word
-            return round(($word_matches/$cnt_words) * (50/100) * $max);
+            // marcel: word matches are maximum of 50% of the maximum per word
+            // xiao: made (100/100) instead of (50/100).
+            return round(($word_matches/$cnt_words) * (100/100) * $max);
         }
 
         return 0;
@@ -980,19 +1122,19 @@ class Content implements \ArrayAccess
 
         $fields = array();
 
-        foreach($this->contenttype['fields'] as $key => $config) {
+        foreach ($this->contenttype['fields'] as $key => $config) {
             if (in_array($config['type'], $searchable_types)) {
-                $fields[$key] = 50;
+                $fields[$key] = isset($config['searchweight']) ? $config['searchweight'] : 50;
             }
         }
 
-        foreach($this->contenttype['fields'] as $key => $config) {
+        foreach ($this->contenttype['fields'] as $key => $config) {
             $weight = 0;
 
             if ($config['type'] == 'slug') {
-                foreach($config['uses'] as $ptr_field) {
-                    if (isset($fields[$key])) {
-                        $fields[$key] = 100;
+                foreach ($config['uses'] as $ptr_field) {
+                    if (isset($fields[$ptr_field])) {
+                        $fields[$ptr_field] = 100;
                     }
                 }
             }
@@ -1002,25 +1144,58 @@ class Content implements \ArrayAccess
     }
 
     /**
+     * Calculate the default taxonomy weights
+     *
+     * Adds weights to taxonomies that behave like tags
+     */
+    private function getTaxonomyWeights()
+    {
+        $taxonomies = array();
+
+        if (isset($this->contenttype['taxonomy'])) {
+            foreach ($this->contenttype['taxonomy'] as $key) {
+                if ($this->app['config']->get('taxonomy/'.$key.'/behaves_like') == 'tags') {
+                    $taxonomies[$key] = $this->app['config']->get('taxonomy/'.$key.'/searchweight', 75);
+                }
+            }
+        }
+        return $taxonomies;
+    }
+
+    /**
      * Weigh this content against a query
      *
      * The query is assumed to be in a format as returned by decode Storage->decodeSearchQuery().
      *
-     * @param array $query    Query to weigh against
+     * @param array $query Query to weigh against
      */
     public function weighSearchResult($query)
     {
         static $contenttype_fields = null;
+        static $contenttype_taxonomies = null;
 
         $ct = $this->contenttype['slug'];
         if ((is_null($contenttype_fields)) || (!isset($contenttype_fields[$ct]))) {
             // Should run only once per contenttype (e.g. singlular_name)
             $contenttype_fields[$ct] = $this->getFieldWeights();
+            $contenttype_taxonomies[$ct] = $this->getTaxonomyWeights();
         }
 
         $weight = 0;
-        foreach($contenttype_fields[$ct] as $key => $field_weight) {
+
+        // Go over all field, and calculate the overall weight.
+        foreach ($contenttype_fields[$ct] as $key => $field_weight) {
             $weight += $this->weighQueryText($this->values[$key], $query['use_q'], $query['words'], $field_weight);
+        }
+
+        // Go over all taxonomies, and calculate the overall weight.
+        foreach ($contenttype_taxonomies[$ct] as $key => $taxonomy) {
+
+            // skip empty taxonomies.
+            if (empty($this->taxonomy[$key])) {
+                continue;
+            }
+            $weight += $this->weighQueryText(implode(' ', $this->taxonomy[$key]), $query['use_q'], $query['words'], $taxonomy);
         }
 
         $this->last_weight = $weight;

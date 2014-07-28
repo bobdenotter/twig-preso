@@ -27,6 +27,7 @@ General settings
  - `message_technical: ...` - The message to display when there's a technical error preventing the sending of the email.
     Most likely this is caused because Swiftmailer can't send the email. Check the Swiftmailer settings in the global
     `config.yml` if this message is shown.
+ - `redirect_on_ok: ...` - Instead of simply displaying a message when the form is 'OK', you can also redirect to a different page on the site, for a more extended message after submitting the form. The value should be a `contenttype/id` or `contenttype/slug` pair. For example: `entry/1` or `page/thank-you`.   
  - `button_text: Send` - Default text on the 'send' button in the forms.
  - `recipient_cc_email: info@example.com` - Use this value to set a global cc email address, this email address will receive a copy of
     all emails sent with simpleforms.
@@ -106,6 +107,25 @@ to modify the functionality or appearance:
   - `use_with: fieldname` - An optional name for an email field. Use this to reference another field, that will be used
     to display the name of the person, used in the `use_as`. Doing this, you can make emails with proper recipients, that
     will be shown as `Example person <info@example.org>`. See the 'Email input with extra recipient' example below.
+  - `minlength` - Add HTML5 form validation minimum length input attribute. Browsers that recognize HTML5 form validation
+    will not except any input shorter than your entered value. Example: `<input type="text" minlength="5"`
+  - `maxlength` - Add HTML5 form validation maxlength to your input attribute. Browsers that recognize HTML5 form
+    validation will not except any input longer than your entered value. Example: `<input type="text" maxlength="25"`
+  - `autofocus` HTML5 autofocus attribute. On page render the input with `autofocus="on"` will be highlighted. Options
+    are `autofocus: on` or `autofocus: off`. Only one form element can have the autofocus attribute. It cannot be
+    applied if the type is `hidden`.
+  - `expanded: true` Attribute for choice elements, use this in combination with multiple and required to make
+    select boxes, radio groups or checkbox groups
+  - `multiple: true` Attribute for choice elements, use this in combination with expanded and required to make
+    select boxes, radio groups or checkbox groups
+  - `autocomplete` HTML5 form attribute that turns the in browser autocomplete function on or off. This is ignored if the
+    input type is set to `hidden`.
+      * `off`: must explicitly enter a value into this field for every use. the browser does not automatically complete the entry.
+      * `on`: The browser can automatically complete the value based on values that the user has entered during previous uses.
+  - `pattern` A JavaScript regular expression to check the input field against. This attribute applies to fields with a type
+   of `text`, `search`, `tel`, `url` or `email`.
+    Example alphanumeric: `<input type="text" pattern="^[a-zA-Z0-9]+" />`
+
 
 The different fieldtypes are as follows, with a short example outlining the specific options for that field.
 Remember you can also use the basic options as well.
@@ -129,6 +149,25 @@ Remember you can also use the basic options as well.
 
     favorite:
       type: choice
+      multiple: false
+      choices: [ Kittens, Puppies, Penguins, Koala bears, "I don't like animals" ]
+
+**Radio buttons:**
+
+    favorite:
+      type: choice
+      expanded: true
+      required: true
+      multiple: false
+      choices: [ Kittens, Puppies, Penguins, Koala bears, "I don't like animals" ]
+
+**Checkboxes:**
+
+    favorite:
+      type: choice
+      expanded: true
+      required: false
+      multiple: true
       choices: [ Kittens, Puppies, Penguins, Koala bears, "I don't like animals" ]
 
 **Checkbox:**
@@ -145,7 +184,26 @@ Remember you can also use the basic options as well.
 The `format` option is used for formatting the date in the emails. You can use the options that are available in
 PHP's `date()` function. See the [documentation for details](http://php.net/date).
 
-**Email input with extra recipient:**
+Using ReCaptcha field:
+----------------------
+
+To protect your forms from spam-bots, you can enable the ReCaptcha service. This lets the visitors type out two words or
+numbers from a picture, to prove that they're human. To enable ReCaptcha, simply enable/fill all the <code>recaptcha_</code>
+fields in <code>config.yml</code>. If you don't have a private/public keypair yet, go to
+[this URL](https://www.google.com/recaptcha/admin/create) to create them.
+
+Overriding values
+-----------------
+
+Override values from the template
+
+    {{ simpleform('formname', { 'somefield' : somevalue } ) }}
+
+This will prefill the field named `somefield` with `somevalue`. This is always available but it will be overridden by `$_GET['somefield']` if `allow_override: true` is set for `somefield`.
+
+
+Email input with extra recipient:
+---------------------------------
 
 If you want to send a copy of the an email address the visitor entered, you can use the `use_as` and
 `use_with` options for email and text fields.
@@ -161,7 +219,8 @@ You can define as many email fields as you like and the addresses will be used, 
       type: text
       label: "The name of the person this email is sent to"
 
-**Upload:**
+Upload:
+-------
 
 Uploads are special, complicated and unsafe.
 
@@ -209,7 +268,8 @@ myformname:
 </pre>
 
 
-**Save to database:**
+Save to database:
+-----------------
 
 There is an option to keep a logfile in the database of all form submissions.
 For this log you need to make a table with columns named after the fieldnames in the form and set the `insert_into_table`
@@ -230,3 +290,81 @@ myformname:
       ..
   button_text: Send the Demo form!
 </pre>
+
+**Tip:** If you want to include the current date and time into the database, set the 'DEFAULT' of the field to 'CURRENT_TIMESTAMP':
+
+<pre>
+CREATE TABLE `notifications` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  ..
+  ..
+  `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+</pre>
+
+
+special log fields
+------------------
+
+There are a few field types for logging ip-addresses and other user values
+
+**Remote address**
+
+    log_ip:
+      type: ip
+
+This will fetch the remote IP address and even try to look through proxies for it.
+
+**Remote host**
+
+    log_remotehost:
+      type: remotehost
+
+This will attempt to lookup the remote hostname, or just give you an empty string.
+
+**Remote user agent**
+
+    log_useragent:
+      type: useragent
+
+This will return the browser's user agent string.
+
+**Timestamp**
+
+    log_timestamp:
+      type: timestamp
+
+This returns the current timestamp.
+
+Sequences
+---------
+
+By popular demand (Hello Peter) there is also a `sequence` option for your field. With this foption you can tell the visitor his or her number in an email.
+
+It has some dependencies.
+
+  - The results must be saved to a table (because there needs to be a record somewhere)
+  - There must be a numerical field in the table (you want this)
+  - The field must probably be hidden in the form
+  - The role must be set to 'sequence' in the `config.yml`
+
+The code to make a sequence field in a form would be:
+
+<pre>
+myformname:
+  recipient_email: info@example.org
+  recipient_name: Info
+  insert_into_table: tablename
+  fields:    
+    recipient:
+      type: email
+      use_as: to_email
+      label: "Your email address"
+    sequence:
+      label: "Next number"
+      type: hidden
+      role: sequence
+</pre>
+
+This form would count every submission and save the number in the database.

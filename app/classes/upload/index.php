@@ -12,7 +12,7 @@
 
 error_reporting(E_ALL | E_STRICT);
 
-if (strpos(__DIR__,'/bolt-public/') !== false) { // installed bolt with composer
+if (strpos(__DIR__, DIRECTORY_SEPARATOR.'bolt-public'.DIRECTORY_SEPARATOR) !== false) { // installed bolt with composer
     require_once __DIR__.'/../../../../vendor/bolt/bolt/app/bootstrap.php';
 } else {
     require_once __DIR__.'/../../bootstrap.php';
@@ -29,13 +29,22 @@ if (!isset($_SESSION['_sf2_attributes']['user']['id'])) {
     die();
 }
 
+$fileSystem = new Symfony\Component\Filesystem\Filesystem;
+
 // Make sure the folder exists.
-makeDir(__DIR__.'/../../../files/'.date('Y-m'));
+$fileSystem->mkdir(__DIR__.'/../../../files/'.date('Y-m'));
 
 require('upload.class.php');
+
+// Default accepted filetypes are: gif|jpe?g|png|zip|tgz|txt|md|docx?|pdf|xlsx?|pptx?|mp3|ogg|wav|m4a|mp4|m4v|ogv|wmv|avi|webm
+if (is_array($app['config']->get('general/accept_file_types'))) {
+    $accepted_ext = implode('|', $app['config']->get('general/accept_file_types'));
+} else {
+    $accepted_ext = $app['config']->get('general/accept_file_types');
+}
 
 $upload_handler = new UploadHandler(array(
     'upload_dir' => dirname(dirname(dirname(dirname($_SERVER['SCRIPT_FILENAME'])))).'/files/'.date('Y-m')."/",
     'upload_url' => '/files/'.date('Y-m')."/",
-    'accept_file_types' => '/\.(gif|jpe?g|png|zip|tgz|txt|md|docx?|pdf|xlsx?|pptx?|mp3)$/i'
+    'accept_file_types' => '/\.(' . $accepted_ext . ')$/i'
 ));

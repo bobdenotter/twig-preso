@@ -5,6 +5,7 @@ namespace Sitemap;
 
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Bolt\Extensions\Snippets\Location as SnippetLocation;
 
 class Extension extends \Bolt\BaseExtension
 {
@@ -27,7 +28,7 @@ class Extension extends \Bolt\BaseExtension
             'type' => "General",
             'first_releasedate' => "2013-07-19",
             'latest_releasedate' => "2013-07-19",
-            'dependancies' => "",
+            'dependencies' => "",
             'priority' => 10
         );
 
@@ -40,10 +41,15 @@ class Extension extends \Bolt\BaseExtension
      */
     function initialize()
     {
+        if (empty($this->config['ignore_contenttype'])) {
+            $this->config['ignore_contenttype'] = array();
+        }
 
         // Set up the routes for the sitemap..
         $this->app->match("/sitemap", array($this, 'sitemap'));
         $this->app->match("/sitemap.xml", array($this, 'sitemapXml'));
+
+        $this->insertSnippet(SnippetLocation::END_OF_HEAD, 'headsnippet');
 
     }
 
@@ -57,16 +63,18 @@ class Extension extends \Bolt\BaseExtension
 
         $links = array(array('link' => $this->app['paths']['root'], 'title' => $this->app['config']->get('general/sitename')));
         foreach( $this->app['config']->get('contenttypes') as $contenttype ) {
-            if (isset($contenttype['listing_template'])) {
-                $links[] = array( 'link' => $this->app['paths']['root'].$contenttype['slug'], 'title' => $contenttype['name'] );
-            }
-            $content = $this->app['storage']->getContent(
-                $contenttype['slug'],
-                array('limit' => 10000, 'order' => 'datepublish desc')
-            );
-            foreach( $content as $entry ) {
-                $links[] = array('link' => $entry->link(), 'title' => $entry->getTitle(),
-                    'lastmod' => date( \DateTime::W3C, strtotime($entry->get('datechanged'))));
+            if(!in_array($contenttype['slug'], $this->config['ignore_contenttype'])) {
+                if (isset($contenttype['listing_template'])) {
+                    $links[] = array( 'link' => $this->app['paths']['root'].$contenttype['slug'], 'title' => $contenttype['name'] );
+                }
+                $content = $this->app['storage']->getContent(
+                    $contenttype['slug'],
+                    array('limit' => 10000, 'order' => 'datepublish desc')
+                );
+                foreach( $content as $entry ) {
+                    $links[] = array('link' => $entry->link(), 'title' => $entry->getTitle(),
+                        'lastmod' => date( \DateTime::W3C, strtotime($entry->get('datechanged'))));
+                }
             }
         }
 
@@ -84,7 +92,7 @@ class Extension extends \Bolt\BaseExtension
 
         $this->app['twig.loader.filesystem']->addPath(__DIR__);
 
-        $body = $this->app['twig']->render($template, array(
+        $body = $this->app['render']->render($template, array(
             'entries' => $links
         ));
 
@@ -102,6 +110,17 @@ class Extension extends \Bolt\BaseExtension
         return $this->sitemap(true);
     }
 
+    public function headsnippet()
+    {
+
+        $snippet = sprintf(
+            '<link rel="sitemap" type="application/xml" title="Sitemap" href="%ssitemap.xml">',
+            $this->app['paths']['rooturl']
+        );
+
+        return $snippet;
+
+    }
 
 
 }

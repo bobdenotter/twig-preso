@@ -1,7 +1,7 @@
 Bolt
 ====
 
-Sophisticated, lightweight & simple CMS, homepage: [Bolt.cm](http://bolt.cm)
+Sophisticated, lightweight & simple CMS. Homepage: [Bolt.cm](http://bolt.cm)
 
 Bolt is a tool for Content Management, which strives to be as simple and straightforward 
 as possible. It is quick to set up, easy to configure, uses elegant templates, and above 
@@ -26,7 +26,7 @@ on our code base [here](https://scrutinizer-ci.com/g/bolt/bolt/inspections).
 Installation
 ------------
 
-Detailed instructions can be found in the [Setup section in the documentation](http://docs.bolt.cm/setup).
+Detailed instructions can be found in the [Installation section in the documentation](http://docs.bolt.cm/installation).
 
 Reporting issues
 ----------------
@@ -40,9 +40,9 @@ This way we can reproduce your issue, turn it into a test and prevent the issue 
 
 Unit tests
 ----------
-For running unit tests you need [phpunit](http://www.phpunit.de/)
+For running unit tests you need [phpunit](http://www.phpunit.de/).
 
-After installing, you can run the unit test suite by running
+After installing, you can run the unit test suite by running:
 
     $ phpunit -c app/
 
@@ -64,4 +64,8 @@ Currently, these are the third party extensions we're aware of:
 - [Newsletter subscription](https://github.com/magabriel/bolt-extension-newsletter-subscription) by @magabriel
 
 The extensions can be placed in the `app/extensions` folder.
-Learn more about writing extensions from our [docs](https://github.com/bolt/bolt-docs/blob/master/source/extensions.md)
+Learn more about writing extensions from our [docs](https://github.com/bolt/bolt-docs/blob/master/source/extensions.md).
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/bolt/bolt/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
+-------
