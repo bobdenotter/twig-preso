@@ -51,7 +51,6 @@ slides:
     record_template: entry.twig
     listing_template: listing.twig
     listing_records: 100
-    sort: sortorder
     recordsperpage: 100
 
 # Pages can be used for the more 'static' pages on your site. Things like
